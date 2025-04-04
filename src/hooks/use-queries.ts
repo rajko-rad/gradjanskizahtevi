@@ -86,10 +86,10 @@ export function useVoteStats(requestId: string) {
 
 export function useCastVote() {
   const queryClient = useQueryClient();
-  const { supabaseUser, authToken } = useSupabaseAuth();
+  const { supabaseUser, authToken, tokenVerified, refreshAuth } = useSupabaseAuth();
 
   return useMutation({
-    mutationFn: ({ 
+    mutationFn: async ({ 
       requestId, 
       value, 
       optionId 
@@ -98,44 +98,76 @@ export function useCastVote() {
       value: string; 
       optionId?: string | null;
     }) => {
-      if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
+      // If we don't have a verified token, try to refresh auth once
+      if (!tokenVerified) {
+        console.log("Token not verified, attempting to refresh auth before voting");
+        await refreshAuth();
+      }
+      
+      if (!supabaseUser?.id) {
+        throw new Error('User not authenticated in Supabase');
+      }
+      
+      if (!authToken) {
+        throw new Error('Missing authentication token for Supabase');
+      }
+      
       return votesService.castVote(supabaseUser.id, requestId, value, optionId, authToken);
     },
     onSuccess: (_, variables) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', variables.requestId] });
       queryClient.invalidateQueries({ 
-        queryKey: ['votes', 'user', supabaseUser?.id || authToken, variables.requestId] 
+        queryKey: ['votes', 'user', supabaseUser?.id, variables.requestId] 
       });
     },
+    onError: (error) => {
+      console.error("Voting error:", error);
+    }
   });
 }
 
 export function useRemoveVote() {
   const queryClient = useQueryClient();
-  const { supabaseUser, authToken } = useSupabaseAuth();
+  const { supabaseUser, authToken, tokenVerified, refreshAuth } = useSupabaseAuth();
 
   return useMutation({
-    mutationFn: ({ requestId }: { requestId: string }) => {
-      if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
+    mutationFn: async ({ requestId }: { requestId: string }) => {
+      // If we don't have a verified token, try to refresh auth once
+      if (!tokenVerified) {
+        console.log("Token not verified, attempting to refresh auth before removing vote");
+        await refreshAuth();
+      }
+      
+      if (!supabaseUser?.id) {
+        throw new Error('User not authenticated in Supabase');
+      }
+      
+      if (!authToken) {
+        throw new Error('Missing authentication token for Supabase');
+      }
+      
       return votesService.removeVote(supabaseUser.id, requestId, authToken);
     },
     onSuccess: (_, variables) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', variables.requestId] });
       queryClient.invalidateQueries({ 
-        queryKey: ['votes', 'user', supabaseUser?.id || authToken, variables.requestId] 
+        queryKey: ['votes', 'user', supabaseUser?.id, variables.requestId] 
       });
     },
+    onError: (error) => {
+      console.error("Vote removal error:", error);
+    }
   });
 }
 
 export function useUserVote(requestId: string) {
-  const { authToken } = useSupabaseAuth();
+  const { supabaseUser, authToken } = useSupabaseAuth();
   const { user } = useUser();
   
   // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
-  const effectiveUserId = authToken || user?.id;
+  const effectiveUserId = supabaseUser?.id || user?.id;
 
   return useQuery({
     queryKey: ['votes', 'user', effectiveUserId, requestId],
@@ -146,8 +178,9 @@ export function useUserVote(requestId: string) {
       console.log('Fetching votes with: ', { 
         effectiveUserId, 
         clerkUserId: user?.id,
-        supabaseUserId: authToken,
+        supabaseUser: supabaseUser?.id,
         requestId,
+        authToken: authToken ? 'present' : 'missing'
       });
       
       return votesService.getUserVote(effectiveUserId, requestId, authToken);

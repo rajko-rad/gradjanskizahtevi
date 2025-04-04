@@ -9,7 +9,10 @@ import {
   ChevronUp,
   CheckCircle2,
   Loader2,
-  RefreshCcw
+  RefreshCcw,
+  Shield,
+  ShieldAlert,
+  ShieldCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommentSystem } from "./CommentSystem";
@@ -24,6 +27,60 @@ import {
   useComments
 } from "@/hooks/use-queries";
 import { useUser } from "@clerk/clerk-react";
+
+// Authentication status component
+function AuthStatus({ 
+  isSignedIn, 
+  canVote, 
+  tokenVerified, 
+  isAuthRefreshing, 
+  onRefresh 
+}: { 
+  isSignedIn: boolean; 
+  canVote: boolean; 
+  tokenVerified: boolean;
+  isAuthRefreshing: boolean;
+  onRefresh: () => void;
+}) {
+  if (!isSignedIn) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
+        <ShieldAlert className="h-4 w-4 text-gray-400" />
+        <span>Sign in to vote</span>
+      </div>
+    );
+  }
+  
+  if (tokenVerified && canVote) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-green-600 mt-2">
+        <ShieldCheck className="h-4 w-4" />
+        <span>Auth verified</span>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex items-center gap-2 text-sm text-amber-600 mt-2">
+      <Shield className="h-4 w-4" />
+      <span>Auth issue</span>
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={onRefresh} 
+        disabled={isAuthRefreshing}
+        className="h-6 px-2"
+      >
+        {isAuthRefreshing ? (
+          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+        ) : (
+          <RefreshCcw className="h-3 w-3 mr-1" />
+        )}
+        Refresh
+      </Button>
+    </div>
+  );
+}
 
 interface VoteCardProps {
   id: string;
@@ -48,9 +105,10 @@ export function VoteCard({
 }: VoteCardProps) {
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
-  const { supabaseUser, canVote, authToken, refreshAuth } = useSupabaseAuth();
+  const { supabaseUser, canVote, tokenVerified, refreshAuth } = useSupabaseAuth();
   const [showComments, setShowComments] = useState(false);
   const [rangeValue, setRangeValue] = useState(min);
+  const [isAuthRefreshing, setIsAuthRefreshing] = useState(false);
 
   // Fetch vote statistics
   const { 
@@ -62,7 +120,8 @@ export function VoteCard({
   const { 
     data: userVote, 
     isLoading: isLoadingUserVote,
-    error: userVoteError 
+    error: userVoteError,
+    refetch: refetchUserVote
   } = useUserVote(id);
 
   // If there's an error fetching the user vote, log it but don't break the UI
@@ -93,27 +152,56 @@ export function VoteCard({
     }
   }, [userVote]);
 
+  // Update refetch logic when authentication changes
+  useEffect(() => {
+    if (canVote && isSignedIn && !isLoadingUserVote) {
+      refetchUserVote();
+    }
+  }, [canVote, isSignedIn, refetchUserVote, isLoadingUserVote]);
+
   // Add a button to manually refresh auth if needed
-  const handleRefreshAuth = () => {
-    if (!canVote && isSignedIn) {
+  const handleRefreshAuth = async () => {
+    if (isAuthRefreshing) return;
+    
+    if (isSignedIn) {
+      setIsAuthRefreshing(true);
+      
       toast({
         title: "Refreshing authentication",
         description: "Attempting to refresh your authentication...",
       });
       
-      refreshAuth().then(() => {
-        toast({
-          title: "Authentication refreshed",
-          description: "You can now vote on requests.",
-        });
-      }).catch(error => {
+      try {
+        await refreshAuth();
+        
+        // Give a short delay to allow auth to propagate
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        if (tokenVerified) {
+          toast({
+            title: "Authentication refreshed",
+            description: "You can now vote on requests.",
+          });
+          
+          // Refetch user's vote
+          refetchUserVote();
+        } else {
+          toast({
+            title: "Authentication failed",
+            description: "Please try signing out and signing back in.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Auth refresh error:", error);
         toast({
           title: "Authentication failed",
           description: "Failed to refresh authentication. Please try again.",
           variant: "destructive",
         });
-        console.error("Auth refresh error:", error);
-      });
+      } finally {
+        setIsAuthRefreshing(false);
+      }
     }
   };
 
@@ -128,14 +216,18 @@ export function VoteCard({
       return;
     }
     
-    if (!canVote) {
+    if (!tokenVerified || !canVote) {
       toast({
         title: "Authentication issue",
         description: "There was a problem with your authentication. Trying to refresh...",
         variant: "destructive",
       });
-      handleRefreshAuth();
-      return;
+      await handleRefreshAuth();
+      
+      // Check if auth refresh was successful
+      if (!tokenVerified || !canVote) {
+        return; // Still not authenticated
+      }
     }
 
     // Validate that request ID exists
@@ -246,6 +338,14 @@ export function VoteCard({
 
   const renderVoteOptions = () => {
     const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote;
+
+    if (isLoading) {
+      return (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+        </div>
+      );
+    }
 
     switch (type) {
       case "yesno":
@@ -362,44 +462,57 @@ export function VoteCard({
     }
   };
 
+  const commentCount = comments?.length || 0;
+
   return (
-    <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all overflow-hidden">
-      <CardHeader className="pb-2 border-b bg-gray-50">
-        <CardTitle className="text-lg font-bold text-serbia-blue">{title}</CardTitle>
-        {description && <CardDescription className="mt-1">{description}</CardDescription>}
+    <Card className="w-full max-w-md mx-auto">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>{title}</CardTitle>
+          {isSignedIn && (
+            <AuthStatus 
+              isSignedIn={isSignedIn}
+              canVote={canVote}
+              tokenVerified={tokenVerified}
+              isAuthRefreshing={isAuthRefreshing}
+              onRefresh={handleRefreshAuth}
+            />
+          )}
+        </div>
+        {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      <CardContent className="p-6">
+      <CardContent>
         {renderVoteOptions()}
-        
+
+        {/* Comments section */}
         {hasComments && (
-          <div className="mt-6 pt-4 border-t">
+          <div className="mt-4">
             <Button 
-              variant="ghost" 
-              className="w-full flex items-center justify-center text-gray-600 hover:text-serbia-blue hover:bg-serbia-blue/5"
+              variant="outline" 
+              size="sm" 
               onClick={() => setShowComments(!showComments)}
+              className="w-full flex items-center justify-center gap-2"
             >
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Komentari
-              {showComments ? 
-                <ChevronUp className="h-4 w-4 ml-2" /> : 
-                <ChevronDown className="h-4 w-4 ml-2" />
-              }
+              <MessageSquare className="h-4 w-4" />
+              {commentCount > 0 ? `Komentari (${commentCount})` : "Komentari"}
+              {showComments ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
             </Button>
             
             {showComments && (
               <div className="mt-4">
                 {isLoadingComments ? (
-                  <div className="p-4 flex justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-serbia-blue" />
-                  </div>
-                ) : !canVote ? (
-                  <div className="p-4 bg-gray-50 rounded-lg text-center">
-                    <p className="text-sm text-gray-600">
-                      Prijavite se da biste komentarisali
-                    </p>
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
                   </div>
                 ) : (
-                  <CommentSystem requestId={id} comments={comments || []} />
+                  <CommentSystem 
+                    requestId={id} 
+                    comments={comments || []} 
+                  />
                 )}
               </div>
             )}
