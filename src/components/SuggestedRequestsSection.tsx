@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -61,8 +60,7 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
           title,
           description,
           created_at,
-          profiles:user_id(username, full_name),
-          votes:votes(count)
+          user_id
         `)
         .eq('category_id', categoryId)
         .eq('status', 'pending')
@@ -76,18 +74,39 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
           variant: "destructive"
         });
       } else if (data) {
+        // Get vote counts for each request
+        const requestIds = data.map(item => item.id);
+        const { data: votesData, error: votesError } = await supabase
+          .from('votes')
+          .select('request_id, count')
+          .in('request_id', requestIds)
+          .select('request_id');
+        
+        if (votesError) {
+          console.error("Error fetching votes:", votesError);
+        }
+
+        // Create a map of request_id to vote count
+        const voteCountMap = new Map();
+        if (votesData) {
+          votesData.forEach(vote => {
+            const currentCount = voteCountMap.get(vote.request_id) || 0;
+            voteCountMap.set(vote.request_id, currentCount + 1);
+          });
+        }
+        
         // Format the data for our component
         const formattedData = data.map(item => ({
           id: item.id,
           title: item.title,
           description: item.description,
-          author: item.profiles?.full_name || item.profiles?.username || "Anonimni korisnik",
+          author: "Građanin", // Default author name since we can't fetch profiles
           timestamp: new Date(item.created_at).toLocaleDateString('sr-RS', {
             day: 'numeric',
             month: 'long',
             year: 'numeric'
           }),
-          votes: item.votes?.length || 0
+          votes: voteCountMap.get(item.id) || 0
         }));
         
         setSuggestedRequests(formattedData);
