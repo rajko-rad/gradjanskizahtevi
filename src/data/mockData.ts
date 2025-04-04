@@ -3,38 +3,58 @@ export const categories = [
   {
     id: "media",
     title: "Mediji",
+    shortTitle: "MED",
     description: "Zahtevi vezani za medije i slobodu informisanja",
-    count: 2
+    count: 2,
+    resources: [
+      { title: "Izveštaj o medijskim slobodama", url: "#" },
+      { title: "Analiza REM regulativa", url: "#" }
+    ]
   },
   {
     id: "elections",
     title: "Izborni uslovi",
+    shortTitle: "IZB",
     description: "Zahtevi za unapređenje i čišćenje biračkih spiskova",
-    count: 1
+    count: 1,
+    resources: [
+      { title: "Izborni zakoni", url: "#" },
+      { title: "Birački spiskovi - analiza", url: "#" }
+    ]
   },
   {
     id: "security",
     title: "Službe Bezbednosti",
+    shortTitle: "BEZ",
     description: "Zahtevi vezani za reforme službi bezbednosti",
-    count: 1
+    count: 1,
+    resources: [
+      { title: "Zakon o službama bezbednosti", url: "#" },
+      { title: "Reforma BIA - predlozi", url: "#" }
+    ]
   },
   {
     id: "judiciary",
     title: "Pravosuđe",
+    shortTitle: "PRA",
     description: "Zahtevi za reformu pravosuđa",
-    count: 1
+    count: 1,
+    resources: [
+      { title: "Status pravosuđa u Srbiji", url: "#" },
+      { title: "Nezavisnost tužilaštva", url: "#" }
+    ]
   },
   {
     id: "government",
-    title: "Prelazna/Tehnička Vlada",
-    description: "Predlozi za formiranje prelazne ili tehničke vlade",
-    count: 3
-  },
-  {
-    id: "opposition",
-    title: "Opozicione liste",
-    description: "Predlozi za sastav opozicionih lista na izborima",
-    count: 1
+    title: "Prelazna Vlada i Opozicija",
+    shortTitle: "VLA",
+    description: "Predlozi za formiranje prelazne vlade i opoziciono delovanje",
+    count: 4,
+    resources: [
+      { title: "Modeli tehničke vlade", url: "#" },
+      { title: "Primeri prelaznih vlada u regionu", url: "#" },
+      { title: "Analiza opozicionih lista", url: "#" }
+    ]
   }
 ];
 
@@ -123,7 +143,7 @@ export const requests = [
   },
   {
     id: "opposition-list",
-    categoryId: "opposition",
+    categoryId: "government",
     title: "Sastav opozicione liste za slobodne izbore",
     description: "Kako bi opozicione liste trebale da se organizuju za izbore",
     type: "multiple",
