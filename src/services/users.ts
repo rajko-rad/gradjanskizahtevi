@@ -21,7 +21,7 @@ function debugLog(message: string, ...args: any[]) {
  * @param email - The user's email
  * @param fullName - The user's full name (optional)
  * @param avatarUrl - The user's avatar URL (optional)
- * @param authToken - Optional auth token to use an authenticated client
+ * @param authToken - Auth token to use an authenticated client (recommended)
  */
 export async function syncUserWithSupabase(
   id: string,
@@ -76,7 +76,7 @@ export async function syncUserWithSupabase(
       debugLog("RPC function call failed:", rpcError instanceof Error ? rpcError.message : String(rpcError));
     }
     
-    // Fall back to upsert if RPC fails
+    // Fall back to upsert operation if the RPC function fails
     debugLog("Falling back to direct upsert operation");
     
     // Check for existing user first by ID

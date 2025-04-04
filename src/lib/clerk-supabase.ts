@@ -21,6 +21,7 @@ export const anonClient = createClient<Database>(supabaseUrl, supabaseKey);
 /**
  * Create a new Supabase client with the provided JWT token from Clerk
  * This approach creates a fresh client for each request to avoid stale tokens
+ * and bypasses Supabase Auth's session management
  * 
  * @param token The JWT token from Clerk's getToken({ template: 'supabase' })
  * @returns A Supabase client with the authentication token
@@ -34,7 +35,8 @@ export function createAuthClient(token: string | null | undefined) {
   debugLog('Creating authenticated client with token');
   
   try {
-    // Create fresh client with token
+    // Create fresh client with token as Authorization header
+    // This bypasses Supabase Auth and directly uses the JWT for RLS
     return createClient<Database>(supabaseUrl, supabaseKey, {
       global: {
         headers: {
@@ -42,8 +44,10 @@ export function createAuthClient(token: string | null | undefined) {
         }
       },
       auth: {
+        // Disable auth features to prevent conflicts
         autoRefreshToken: false,
-        persistSession: false
+        persistSession: false,
+        detectSessionInUrl: false
       }
     });
   } catch (error) {
@@ -86,17 +90,52 @@ export function logTokenInfo(token: string | null | undefined) {
 /**
  * Get the appropriate Supabase client based on authentication status
  * If no token is provided, returns the anonymous client
+ * This is the main function you should use throughout the application
  * 
  * @param token JWT token from Clerk
  * @returns The appropriate Supabase client
  */
 export function getSupabaseClient(token?: string | null) {
-  return token ? createAuthClient(token) : anonClient;
+  if (!token) {
+    debugLog('supabaseClient using anonymous client (no token)');
+    return anonClient;
+  }
+  
+  debugLog('supabaseClient using authenticated client');
+  return createAuthClient(token);
+}
+
+/**
+ * Test function to check if a token is working correctly
+ * This can be used for debugging authentication issues
+ */
+export async function testJwtToken(token: string) {
+  try {
+    const client = getSupabaseClient(token);
+    
+    // Try to query the jwt_test view we created
+    const { data, error } = await client
+      .from('jwt_test')
+      .select('*')
+      .single();
+      
+    if (error) {
+      debugLog('JWT test failed:', error);
+      return { success: false, error };
+    }
+    
+    debugLog('JWT test succeeded:', data);
+    return { success: true, data };
+  } catch (error) {
+    debugLog('JWT test exception:', error);
+    return { success: false, error };
+  }
 }
 
 export default {
   anonClient,
   createAuthClient,
   getSupabaseClient,
-  logTokenInfo
+  logTokenInfo,
+  testJwtToken
 }; 

@@ -120,12 +120,10 @@ export function useCastVote() {
   return useMutation({
     mutationFn: async ({ 
       requestId, 
-      value, 
-      optionId 
+      value
     }: { 
       requestId: string; 
-      value: string; 
-      optionId?: string | null;
+      value: number;
     }) => {
       // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
       let userId = supabaseUser?.id || user?.id;
@@ -187,32 +185,19 @@ export function useCastVote() {
         }
       }
       
-      try {
-        debugLog(`Calling castVote with token: ${authToken ? 'present' : 'missing'}`);
-        const result = await votesService.castVote(userId, requestId, value, optionId, authToken);
-        
-        // Reset retry count on success
-        if (retryCount > 0) {
-          setRetryCount(0);
-        }
-        
-        return result;
-      } catch (error) {
-        // Format user-friendly error message
-        let errorMessage = 'Failed to cast vote';
-        if (error instanceof Error) {
-          if (error.message.includes('authenticated') || error.message.includes('auth')) {
-            errorMessage = 'Authentication error. Please sign in again.';
-          } else if (error.message.includes('permission')) {
-            errorMessage = 'Permission denied. You may not have access to vote.';
-          } else {
-            errorMessage = error.message;
-          }
-        }
-        
-        // Rethrow with user-friendly message
-        throw new Error(errorMessage);
+      debugLog(`Calling castVote with token: ${authToken ? 'present' : 'missing'}`);
+      const result = await votesService.castVote(userId, requestId, value, authToken);
+      
+      if (result === null) {
+        throw new Error('Failed to cast vote. You may not have permission or there may be an authentication issue.');
       }
+      
+      // Reset retry count on success
+      if (retryCount > 0) {
+        setRetryCount(0);
+      }
+      
+      return result;
     },
     onSuccess: (_, variables) => {
       const userId = supabaseUser?.id || user?.id;
@@ -304,30 +289,20 @@ export function useRemoveVote() {
         }
       }
       
-      try {
-        debugLog(`Calling removeVote with token: ${authToken ? 'present' : 'missing'}`);
-        await votesService.removeVote(userId, requestId, authToken);
-        
-        // Reset retry count on success
-        if (retryCount > 0) {
-          setRetryCount(0);
-        }
-      } catch (error) {
-        // Format user-friendly error message
-        let errorMessage = 'Failed to remove vote';
-        if (error instanceof Error) {
-          if (error.message.includes('authenticated') || error.message.includes('auth')) {
-            errorMessage = 'Authentication error. Please sign in again.';
-          } else if (error.message.includes('permission')) {
-            errorMessage = 'Permission denied. You may not have access to remove this vote.';
-          } else {
-            errorMessage = error.message;
-          }
-        }
-        
-        // Rethrow with user-friendly message
-        throw new Error(errorMessage);
+      // Call the removeVote function
+      debugLog(`Calling removeVote with token: ${authToken ? 'present' : 'missing'}`);
+      const success = await votesService.removeVote(userId, requestId, authToken);
+      
+      // Reset retry count on success
+      if (retryCount > 0) {
+        setRetryCount(0);
       }
+      
+      if (!success) {
+        throw new Error('Failed to remove vote. You may not have permission or there may be an authentication issue.');
+      }
+      
+      return { success };
     },
     onSuccess: (_, variables) => {
       const userId = supabaseUser?.id || user?.id;
