@@ -1,4 +1,3 @@
-
 export const categories = [
   {
     id: "media",
@@ -159,7 +158,6 @@ export const requests = [
   }
 ];
 
-// New suggested requests data
 export const suggestedRequests = [
   {
     id: "media-censorship",
@@ -168,8 +166,58 @@ export const suggestedRequests = [
     description: "Predlog za ukidanje svih vidova cenzure u medijima i garantovanje slobode izražavanja",
     author: "Ana Milić",
     timestamp: "Pre 3 dana",
-    status: "pending", // pending, approved, rejected
+    status: "pending",
     votes: 87
+  },
+  {
+    id: "media-ownership",
+    categoryId: "media",
+    title: "Transparentnost vlasništva medija",
+    description: "Objavljivanje pune informacije o vlasništvu svih medija i njihovim izvorima finansiranja",
+    author: "Miloš Jovanović",
+    timestamp: "Pre 5 dana",
+    status: "pending",
+    votes: 65
+  },
+  {
+    id: "media-subsidy",
+    categoryId: "media",
+    title: "Reforma medijskih subvencija",
+    description: "Predlog novog sistema raspodele subvencija za medije, baziran na kvalitetu i nezavisnosti",
+    author: "Jelena Marković",
+    timestamp: "Pre 2 dana",
+    status: "pending",
+    votes: 41
+  },
+  {
+    id: "media-public",
+    categoryId: "media",
+    title: "Reforma javnih medijskih servisa",
+    description: "Sveobuhvatna reforma javnih medijskih servisa kako bi služili javnom interesu, ne političkom",
+    author: "Ivan Petrović",
+    timestamp: "Pre 7 dana",
+    status: "pending",
+    votes: 93
+  },
+  {
+    id: "media-hate",
+    categoryId: "media",
+    title: "Zabrana govora mržnje",
+    description: "Stroža primena zakona protiv govora mržnje i dezinformacija u medijima",
+    author: "Marija Simić",
+    timestamp: "Pre 1 dan",
+    status: "pending",
+    votes: 78
+  },
+  {
+    id: "media-local",
+    categoryId: "media",
+    title: "Podrška lokalnim medijima",
+    description: "Predlog mera za podršku lokalnim i nezavisnim medijima u manjim sredinama",
+    author: "Dragan Nikolić",
+    timestamp: "Pre 4 dana",
+    status: "pending",
+    votes: 36
   },
   {
     id: "electoral-commission",
@@ -182,6 +230,46 @@ export const suggestedRequests = [
     votes: 64
   },
   {
+    id: "electoral-observers",
+    categoryId: "elections",
+    title: "Nezavisni posmatrači izbora",
+    description: "Obavezno prisustvo nezavisnih posmatrača na svim biračkim mestima tokom izbora",
+    author: "Ana Đorđević",
+    timestamp: "Pre 2 dana",
+    status: "pending",
+    votes: 75
+  },
+  {
+    id: "electoral-media",
+    categoryId: "elections",
+    title: "Jednaka medijska zastupljenost",
+    description: "Zagarantovana jednaka zastupljenost svih političkih opcija u medijima tokom kampanje",
+    author: "Nikola Jović",
+    timestamp: "Pre 6 dana",
+    status: "pending",
+    votes: 82
+  },
+  {
+    id: "electoral-diaspora",
+    categoryId: "elections",
+    title: "Glasanje dijaspore",
+    description: "Olakšanje postupka glasanja za građane Srbije koji žive u inostranstvu",
+    author: "Marko Kovačević",
+    timestamp: "Pre 4 dana",
+    status: "pending",
+    votes: 49
+  },
+  {
+    id: "electoral-electronic",
+    categoryId: "elections",
+    title: "Elektronsko glasanje",
+    description: "Postepeno uvođenje elektronskog glasanja uz maksimalne mere bezbednosti",
+    author: "Jovana Stanković",
+    timestamp: "Pre 3 dana",
+    status: "pending",
+    votes: 38
+  },
+  {
     id: "judiciary-independence",
     categoryId: "judiciary",
     title: "Nezavisnost sudija",
@@ -190,6 +278,46 @@ export const suggestedRequests = [
     timestamp: "Pre 2 dana",
     status: "pending",
     votes: 104
+  },
+  {
+    id: "judiciary-accountability",
+    categoryId: "judiciary",
+    title: "Odgovornost sudija",
+    description: "Uspostavljanje efikasnog sistema za ocenjivanje rada i odgovornosti sudija",
+    author: "Petar Simić",
+    timestamp: "Pre 5 dana",
+    status: "pending",
+    votes: 67
+  },
+  {
+    id: "judiciary-prosecution",
+    categoryId: "judiciary",
+    title: "Reforma tužilaštva",
+    description: "Sveobuhvatna reforma sistema tužilaštva za efikasnije procesuiranje slučajeva",
+    author: "Milica Petrović",
+    timestamp: "Pre 3 dana",
+    status: "pending",
+    votes: 86
+  },
+  {
+    id: "security-oversight",
+    categoryId: "security",
+    title: "Civilni nadzor službi",
+    description: "Jačanje sistema civilnog nadzora nad radom bezbednosnih službi",
+    author: "Đorđe Jovanović",
+    timestamp: "Pre 4 dana",
+    status: "pending",
+    votes: 73
+  },
+  {
+    id: "security-reform",
+    categoryId: "security",
+    title: "Reforma policije",
+    description: "Sveobuhvatna reforma policijskih snaga i njihove organizacije",
+    author: "Nevena Kostić",
+    timestamp: "Pre 2 dana", 
+    status: "pending",
+    votes: 89
   }
 ];
 
