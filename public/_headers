@@ -4,7 +4,7 @@
   Referrer-Policy: no-referrer
   Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
   X-XSS-Protection: 1; mode=block
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.supabase.co https://api.cloudflare.com https://*.gradjanskizahtevi.org https://*.clerk.services; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://*.clerkstage.dev https://*.clerk.services; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.clerk.accounts.dev https://*.clerk.com https://*.supabase.co; font-src 'self' data:; frame-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.clerk.services;
+  Content-Security-Policy: default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; frame-src *;
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Access-Control-Allow-Origin: *
   Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS
