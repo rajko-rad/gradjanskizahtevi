@@ -8,14 +8,43 @@ import {
   ArrowRight, 
   FileText,
   Clock,
-  Calendar
+  Calendar,
+  TestTube
 } from "lucide-react";
 import { useAuth, useUser, SignInButton, SignUpButton } from "@clerk/clerk-react";
 import { Link } from "react-router-dom";
+import { testJwtToken } from "@/lib/clerk-supabase";
 
 const Index = () => {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, getToken } = useAuth();
   const { user } = useUser();
+  
+  // Test JWT token function
+  const testJwtWithHook = async () => {
+    try {
+      console.log("Starting JWT test with hook...");
+      const token = await getToken({ template: 'supabase' });
+      console.log("Got token:", !!token);
+      
+      if (!token) {
+        console.error("No token returned from Clerk");
+        alert("No token returned from Clerk. Please make sure you're logged in.");
+        return;
+      }
+      
+      const result = await testJwtToken(token);
+      console.log("JWT Test Result:", result);
+      
+      if (result.success) {
+        alert("JWT test succeeded! Your RLS policies are working correctly.");
+      } else {
+        alert("JWT test failed. Check console for details.");
+      }
+    } catch (error) {
+      console.error("JWT test error:", error);
+      alert("Error testing JWT: " + (error instanceof Error ? error.message : String(error)));
+    }
+  };
   
   // Timeline/events data
   const timelineEvents = [
@@ -63,6 +92,18 @@ const Index = () => {
             <p className="text-xl text-gray-600 md:text-2xl leading-relaxed">
               Platforma za glasanje i diskusiju o ključnim zahtevima građana Srbije
             </p>
+            
+            {/* JWT Test Button for logged-in users */}
+            {isSignedIn && (
+              <Button 
+                variant="outline" 
+                className="mt-4 text-sm"
+                onClick={testJwtWithHook}
+              >
+                <TestTube className="mr-2 h-4 w-4" />
+                Test JWT Tokens
+              </Button>
+            )}
             
             {/* Topic buttons in the banner */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 w-full mt-8">
