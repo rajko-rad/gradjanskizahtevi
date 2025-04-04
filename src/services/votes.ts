@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, getAuthClient } from '@/lib/supabase';
 import type { Database } from '@/types/supabase';
 
 export type Vote = Database['public']['Tables']['votes']['Row'];
@@ -10,7 +10,8 @@ export async function castVote(
   userId: string,
   requestId: string,
   value: string,
-  optionId?: string | null
+  optionId?: string | null,
+  authToken?: string | null
 ): Promise<Vote> {
   console.log("Casting vote with params:", { userId, requestId, value, optionId });
   
@@ -24,16 +25,21 @@ export async function castVote(
     throw new Error("User not authenticated");
   }
 
-  // Check if the user is authenticated with Supabase
-  const { data: authUser, error: authError } = await supabase.auth.getUser();
-  if (authError || !authUser.user) {
-    console.error("Authentication error in castVote:", authError);
-    throw new Error("User not authenticated in Supabase");
-  }
+  // Use the authenticated client if a token is provided
+  const client = authToken ? getAuthClient(authToken) : supabase;
 
   try {
+    // Check if the user is authenticated with Supabase - only if using auth token
+    if (authToken) {
+      const { data: authUser, error: authError } = await client.auth.getUser();
+      if (authError || !authUser.user) {
+        console.error("Authentication error in castVote:", authError);
+        throw new Error("User not authenticated in Supabase");
+      }
+    }
+
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await client
       .from('users')
       .select('id')
       .eq('id', userId)
@@ -48,7 +54,7 @@ export async function castVote(
     const effectiveUserId = userData?.id || userId;
     
     // Check if the user has already voted for this request
-    const { data: existingVote, error: existingVoteError } = await supabase
+    const { data: existingVote, error: existingVoteError } = await client
       .from('votes')
       .select('*')
       .eq('user_id', effectiveUserId)
@@ -64,7 +70,7 @@ export async function castVote(
     if (existingVote) {
       // Update the existing vote
       console.log("Updating existing vote:", existingVote.id);
-      const { data: updatedVote, error: updateError } = await supabase
+      const { data: updatedVote, error: updateError } = await client
         .from('votes')
         .update({
           value,
@@ -84,7 +90,7 @@ export async function castVote(
     } else {
       // Create a new vote
       console.log("Creating new vote for user:", effectiveUserId);
-      const { data: newVote, error: insertError } = await supabase
+      const { data: newVote, error: insertError } = await client
         .from('votes')
         .insert({
           user_id: effectiveUserId,
@@ -111,10 +117,17 @@ export async function castVote(
 /**
  * Remove a vote
  */
-export async function removeVote(userId: string, requestId: string): Promise<void> {
+export async function removeVote(
+  userId: string, 
+  requestId: string,
+  authToken?: string | null
+): Promise<void> {
+  // Use the authenticated client if a token is provided
+  const client = authToken ? getAuthClient(authToken) : supabase;
+  
   try {
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await client
       .from('users')
       .select('id')
       .eq('id', userId)
@@ -128,7 +141,7 @@ export async function removeVote(userId: string, requestId: string): Promise<voi
     // If user exists in the database, use their ID, otherwise use the provided ID
     const effectiveUserId = userData?.id || userId;
 
-    const { error } = await supabase
+    const { error } = await client
       .from('votes')
       .delete()
       .eq('user_id', effectiveUserId)
@@ -147,11 +160,18 @@ export async function removeVote(userId: string, requestId: string): Promise<voi
 /**
  * Get a user's vote for a specific request
  */
-export async function getUserVote(userId: string, requestId: string): Promise<Vote | null> {
+export async function getUserVote(
+  userId: string, 
+  requestId: string,
+  authToken?: string | null
+): Promise<Vote | null> {
+  // Use the authenticated client if a token is provided
+  const client = authToken ? getAuthClient(authToken) : supabase;
+  
   try {
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
     // This is necessary because Clerk IDs don't match the UUID format expected by Supabase
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await client
       .from('users')
       .select('id')
       .eq('id', userId)
@@ -165,7 +185,7 @@ export async function getUserVote(userId: string, requestId: string): Promise<Vo
     // If user exists in the database, use their ID, otherwise use the provided ID
     const effectiveUserId = userData?.id || userId;
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('votes')
       .select('*')
       .eq('user_id', effectiveUserId)
@@ -230,8 +250,14 @@ export async function getVoteStats(requestId: string): Promise<{ total: number, 
 /**
  * Get all votes by a user
  */
-export async function getUserVotes(userId: string): Promise<Vote[]> {
-  const { data, error } = await supabase
+export async function getUserVotes(
+  userId: string,
+  authToken?: string | null
+): Promise<Vote[]> {
+  // Use the authenticated client if a token is provided
+  const client = authToken ? getAuthClient(authToken) : supabase;
+  
+  const { data, error } = await client
     .from('votes')
     .select('*')
     .eq('user_id', userId);

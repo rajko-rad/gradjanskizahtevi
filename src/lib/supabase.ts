@@ -5,14 +5,56 @@ import type { Database } from '@/types/supabase';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+// Create a single anonymous client instance
 export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
+// Store authenticated client
+let authClientInstance: ReturnType<typeof createClient<Database>> | null = null;
+
 /**
- * Gets the Supabase client instance
- * @returns The Supabase client
+ * Get or create an authenticated Supabase client with the user's JWT token
+ * This implements a singleton pattern to prevent multiple client instances
+ * @param authToken - The JWT token from Clerk
+ * @returns Authenticated Supabase client
  */
-export function getSupabaseClient() {
-  return supabase;
+export function getAuthClient(authToken: string | null) {
+  // If no token is provided, return the anonymous client
+  if (!authToken) {
+    return supabase;
+  }
+
+  // Create a new auth client or reuse the existing one
+  if (!authClientInstance) {
+    authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      }
+    });
+    console.log('Created new authenticated Supabase client');
+  } else {
+    // For existing clients, recreate with the new token
+    // This is more reliable than trying to update headers directly
+    authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      }
+    });
+    console.log('Updated authenticated Supabase client with new token');
+  }
+
+  return authClientInstance;
+}
+
+/**
+ * Clear the authenticated client (useful for logout)
+ */
+export function clearAuthClient() {
+  authClientInstance = null;
+  console.log('Cleared authenticated Supabase client');
 }
 
 export default supabase;

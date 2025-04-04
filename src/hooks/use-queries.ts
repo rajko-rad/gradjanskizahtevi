@@ -86,8 +86,7 @@ export function useVoteStats(requestId: string) {
 
 export function useCastVote() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
-  const { supabaseUser } = useSupabaseAuth();
+  const { supabaseUser, authToken } = useSupabaseAuth();
 
   return useMutation({
     mutationFn: ({ 
@@ -100,13 +99,13 @@ export function useCastVote() {
       optionId?: string | null;
     }) => {
       if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
-      return votesService.castVote(supabaseUser.id, requestId, value, optionId);
+      return votesService.castVote(supabaseUser.id, requestId, value, optionId, authToken);
     },
     onSuccess: (_, variables) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', variables.requestId] });
       queryClient.invalidateQueries({ 
-        queryKey: ['votes', 'user', supabaseUser?.id || userId, variables.requestId] 
+        queryKey: ['votes', 'user', supabaseUser?.id || authToken, variables.requestId] 
       });
     },
   });
@@ -114,31 +113,29 @@ export function useCastVote() {
 
 export function useRemoveVote() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
-  const { supabaseUser } = useSupabaseAuth();
+  const { supabaseUser, authToken } = useSupabaseAuth();
 
   return useMutation({
     mutationFn: ({ requestId }: { requestId: string }) => {
       if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
-      return votesService.removeVote(supabaseUser.id, requestId);
+      return votesService.removeVote(supabaseUser.id, requestId, authToken);
     },
     onSuccess: (_, variables) => {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', variables.requestId] });
       queryClient.invalidateQueries({ 
-        queryKey: ['votes', 'user', supabaseUser?.id || userId, variables.requestId] 
+        queryKey: ['votes', 'user', supabaseUser?.id || authToken, variables.requestId] 
       });
     },
   });
 }
 
 export function useUserVote(requestId: string) {
-  const { userId } = useAuth();
+  const { authToken } = useSupabaseAuth();
   const { user } = useUser();
-  const { supabaseUser } = useSupabaseAuth();
   
   // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
-  const effectiveUserId = supabaseUser?.id || user?.id;
+  const effectiveUserId = authToken || user?.id;
 
   return useQuery({
     queryKey: ['votes', 'user', effectiveUserId, requestId],
@@ -148,12 +145,12 @@ export function useUserVote(requestId: string) {
       // For debugging
       console.log('Fetching votes with: ', { 
         effectiveUserId, 
-        clerkUserId: userId,
-        supabaseUserId: supabaseUser?.id,
+        clerkUserId: user?.id,
+        supabaseUserId: authToken,
         requestId,
       });
       
-      return votesService.getUserVote(effectiveUserId, requestId);
+      return votesService.getUserVote(effectiveUserId, requestId, authToken);
     },
     enabled: !!effectiveUserId && !!requestId,
   });
@@ -171,7 +168,6 @@ export function useComments(requestId: string, includeVotes: boolean = false) {
 
 export function useAddComment() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
   const { supabaseUser } = useSupabaseAuth();
 
   return useMutation({
@@ -196,7 +192,6 @@ export function useAddComment() {
 
 export function useUpdateComment() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
   const { supabaseUser } = useSupabaseAuth();
 
   return useMutation({
@@ -221,7 +216,6 @@ export function useUpdateComment() {
 
 export function useDeleteComment() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
   const { supabaseUser } = useSupabaseAuth();
 
   return useMutation({
@@ -244,7 +238,6 @@ export function useDeleteComment() {
 
 export function useVoteOnComment() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
   const { supabaseUser } = useSupabaseAuth();
 
   return useMutation({
@@ -270,7 +263,7 @@ export function useVoteOnComment() {
 // ---------------------- Suggested Requests Queries & Mutations ----------------------
 
 export function useSuggestedRequests(categoryId?: string) {
-  const { userId } = useAuth();
+  const { supabaseUser, authToken } = useSupabaseAuth();
 
   return useQuery({
     queryKey: ['suggestedRequests', { categoryId }],
@@ -285,6 +278,8 @@ export function useSuggestedRequests(categoryId?: string) {
 }
 
 export function useTopSuggestedRequests(limit = 10) {
+  const { authToken } = useSupabaseAuth();
+
   return useQuery({
     queryKey: ['suggestedRequests', 'top', { limit }],
     queryFn: () => suggestedRequestsService.getTopSuggestedRequests(limit),
@@ -293,6 +288,8 @@ export function useTopSuggestedRequests(limit = 10) {
 }
 
 export function useSuggestedRequestById(id: string) {
+  const { authToken } = useSupabaseAuth();
+
   return useQuery({
     queryKey: ['suggestedRequests', id],
     queryFn: () => suggestedRequestsService.getSuggestedRequestById(id),
@@ -303,7 +300,6 @@ export function useSuggestedRequestById(id: string) {
 
 export function useCreateSuggestedRequest() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
   const { supabaseUser } = useSupabaseAuth();
 
   return useMutation({
@@ -334,33 +330,33 @@ export function useCreateSuggestedRequest() {
 
 export function useVoteOnSuggestedRequest() {
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
-  const { supabaseUser } = useSupabaseAuth();
+  const { supabaseUser, authToken } = useSupabaseAuth();
 
   return useMutation({
     mutationFn: ({ 
       suggestedRequestId, 
-      value 
-    }: { 
-      suggestedRequestId: string; 
-      value: number;
+      value = 1  // Default to upvote
+    }: {
+      suggestedRequestId: string;
+      value?: number;
     }) => {
       if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
       return suggestedRequestsService.voteOnSuggestedRequest(supabaseUser.id, suggestedRequestId);
     },
     onSuccess: (_, variables) => {
-      // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['suggestedRequests'] });
+      queryClient.invalidateQueries({ 
+        queryKey: ['suggestedRequests', 'hasVoted', supabaseUser?.id, variables.suggestedRequestId] 
+      });
     },
   });
 }
 
 export function useHasVotedForSuggestion(suggestionId: string) {
-  const { userId } = useAuth();
-  const { supabaseUser } = useSupabaseAuth();
+  const { supabaseUser, authToken } = useSupabaseAuth();
   
-  // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
-  const effectiveUserId = supabaseUser?.id || userId;
+  // Use the Supabase user ID
+  const effectiveUserId = supabaseUser?.id;
 
   return useQuery({
     queryKey: ['suggestedRequests', 'hasVoted', effectiveUserId, suggestionId],
@@ -369,6 +365,7 @@ export function useHasVotedForSuggestion(suggestionId: string) {
       return suggestedRequestsService.hasUserVotedForSuggestion(effectiveUserId, suggestionId);
     },
     enabled: !!effectiveUserId && !!suggestionId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 

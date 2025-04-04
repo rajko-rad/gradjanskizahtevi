@@ -8,7 +8,8 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  Loader2
+  Loader2,
+  RefreshCcw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommentSystem } from "./CommentSystem";
@@ -22,6 +23,7 @@ import {
   useUserVote, 
   useComments
 } from "@/hooks/use-queries";
+import { useUser } from "@clerk/clerk-react";
 
 interface VoteCardProps {
   id: string;
@@ -46,7 +48,7 @@ export function VoteCard({
 }: VoteCardProps) {
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
-  const { canVote, isLoading: isAuthLoading } = useSupabaseAuth();
+  const { supabaseUser, canVote, authToken, refreshAuth } = useSupabaseAuth();
   const [showComments, setShowComments] = useState(false);
   const [rangeValue, setRangeValue] = useState(min);
 
@@ -91,23 +93,48 @@ export function VoteCard({
     }
   }, [userVote]);
 
-  // Handle voting
-  const handleVote = (option: string) => {
+  // Add a button to manually refresh auth if needed
+  const handleRefreshAuth = () => {
+    if (!canVote && isSignedIn) {
+      toast({
+        title: "Refreshing authentication",
+        description: "Attempting to refresh your authentication...",
+      });
+      
+      refreshAuth().then(() => {
+        toast({
+          title: "Authentication refreshed",
+          description: "You can now vote on requests.",
+        });
+      }).catch(error => {
+        toast({
+          title: "Authentication failed",
+          description: "Failed to refresh authentication. Please try again.",
+          variant: "destructive",
+        });
+        console.error("Auth refresh error:", error);
+      });
+    }
+  };
+
+  // Update error handling for voting
+  const handleVote = async (value: string) => {
     if (!isSignedIn) {
       toast({
-        title: "Prijavite se",
-        description: "Morate biti prijavljeni da biste mogli da glasate.",
-        variant: "destructive"
+        title: "Sign in required",
+        description: "You must be signed in to vote.",
+        variant: "destructive",
       });
       return;
     }
     
     if (!canVote) {
       toast({
-        title: "Greška sa autentikacijom",
-        description: "Došlo je do greške sa vašom autentikacijom. Pokušajte da se odjavite i ponovo prijavite.",
-        variant: "destructive"
+        title: "Authentication issue",
+        description: "There was a problem with your authentication. Trying to refresh...",
+        variant: "destructive",
       });
+      handleRefreshAuth();
       return;
     }
 
@@ -123,7 +150,7 @@ export function VoteCard({
     }
 
     // If already voted for this option, remove the vote
-    if (selectedOption === option) {
+    if (selectedOption === value) {
       removeVote({ requestId: id }, {
         onSuccess: () => {
           toast({
@@ -144,8 +171,8 @@ export function VoteCard({
       // Cast or update vote
       castVote({ 
         requestId: id, 
-        value: option,
-        optionId: type === 'multiple' ? option : undefined
+        value: value,
+        optionId: type === 'multiple' ? value : undefined
       }, {
         onSuccess: () => {
           toast({
@@ -218,7 +245,7 @@ export function VoteCard({
   };
 
   const renderVoteOptions = () => {
-    const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote || isAuthLoading;
+    const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote;
 
     switch (type) {
       case "yesno":
