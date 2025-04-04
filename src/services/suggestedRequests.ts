@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type SuggestedRequest = Database['public']['Tables']['suggested_requests']['Row'];
@@ -15,7 +15,7 @@ export type ExtendedSuggestedRequest = SuggestedRequest & {
  * Get all suggested requests for a category
  */
 export async function getSuggestedRequests(categoryId: string): Promise<(SuggestedRequest & { voteCount: number, hasVoted?: boolean })[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('suggested_requests')
     .select('*')
     .eq('category_id', categoryId)
@@ -36,7 +36,7 @@ export async function getSuggestedRequests(categoryId: string): Promise<(Suggest
   
   // Note: We need to manually count votes for each suggestion since count aggregations
   // are more complex in Supabase
-  const { data: votes, error: votesError } = await supabase
+  const { data: votes, error: votesError } = await getSupabaseClient()
     .from('suggested_request_votes')
     .select('suggested_request_id')
     .in('suggested_request_id', suggestionIds);
@@ -64,7 +64,7 @@ export async function getSuggestedRequests(categoryId: string): Promise<(Suggest
  * Get a single suggested request by ID
  */
 export async function getSuggestedRequestById(id: string): Promise<SuggestedRequest & { voteCount: number }> {
-  const { data: suggestion, error } = await supabase
+  const { data: suggestion, error } = await getSupabaseClient()
     .from('suggested_requests')
     .select('*')
     .eq('id', id)
@@ -76,7 +76,7 @@ export async function getSuggestedRequestById(id: string): Promise<SuggestedRequ
   }
 
   // Get vote count manually by counting votes
-  const { data: votes, error: voteError } = await supabase
+  const { data: votes, error: voteError } = await getSupabaseClient()
     .from('suggested_request_votes')
     .select('id')
     .eq('suggested_request_id', id);
@@ -101,7 +101,7 @@ export async function createSuggestedRequest(
   title: string,
   description: string
 ): Promise<SuggestedRequest> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('suggested_requests')
     .insert({
       category_id: categoryId,
@@ -129,7 +129,7 @@ export async function voteOnSuggestedRequest(
   suggestionId: string
 ): Promise<{ added: boolean }> {
   // Check if the user has already voted for this suggestion
-  const { data: existingVote, error: checkError } = await supabase
+  const { data: existingVote, error: checkError } = await getSupabaseClient()
     .from('suggested_request_votes')
     .select('*')
     .eq('user_id', userId)
@@ -143,7 +143,7 @@ export async function voteOnSuggestedRequest(
 
   // If the user has already voted, remove their vote
   if (existingVote) {
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await getSupabaseClient()
       .from('suggested_request_votes')
       .delete()
       .eq('id', existingVote.id);
@@ -157,7 +157,7 @@ export async function voteOnSuggestedRequest(
   }
 
   // Otherwise, add their vote
-  const { error: addError } = await supabase
+  const { error: addError } = await getSupabaseClient()
     .from('suggested_request_votes')
     .insert({
       user_id: userId,
@@ -180,7 +180,7 @@ export async function hasUserVotedForSuggestion(
   userId: string,
   suggestionId: string
 ): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('suggested_request_votes')
     .select('*')
     .eq('user_id', userId)
@@ -202,7 +202,7 @@ export async function approveSuggestedRequest(
   suggestionId: string,
   adminUserId: string
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getSupabaseClient()
     .from('suggested_requests')
     .update({
       status: 'approved',
@@ -223,7 +223,7 @@ export async function rejectSuggestedRequest(
   suggestionId: string,
   adminUserId: string
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getSupabaseClient()
     .from('suggested_requests')
     .update({
       status: 'rejected',
@@ -244,7 +244,7 @@ export async function getTopSuggestedRequests(
   limit: number = 5
 ): Promise<(SuggestedRequest & { voteCount: number })[]> {
   // Get all pending suggestions
-  const { data: allSuggestions, error: suggestionsError } = await supabase
+  const { data: allSuggestions, error: suggestionsError } = await getSupabaseClient()
     .from('suggested_requests')
     .select('*')
     .eq('status', 'pending');
@@ -259,7 +259,7 @@ export async function getTopSuggestedRequests(
   }
 
   // Get all votes
-  const { data: allVotes, error: votesError } = await supabase
+  const { data: allVotes, error: votesError } = await getSupabaseClient()
     .from('suggested_request_votes')
     .select('*');
   
@@ -294,7 +294,7 @@ export async function getUserVoteOnSuggestedRequest(
   userId: string, 
   suggestedRequestId: string
 ): Promise<number | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('suggested_request_votes')
     .select('value')
     .eq('user_id', userId)

@@ -1,5 +1,4 @@
-import { supabase } from '@/lib/supabase';
-import { getSupabaseClient, logTokenInfo } from '@/lib/clerk-supabase';
+import { getSupabaseClient, logTokenInfo, anonClient } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type User = Database['public']['Tables']['users']['Row'];
@@ -189,7 +188,7 @@ export async function syncUserWithSupabase(
  * Get a user by ID
  */
 export async function getUserById(id: string): Promise<User | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('users')
     .select('*')
     .eq('id', id)
@@ -204,16 +203,16 @@ export async function getUserById(id: string): Promise<User | null> {
 }
 
 /**
- * Check if a user exists
+ * Check if a user exists by their ID
  */
 export async function userExists(id: string): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('users')
     .select('id')
     .eq('id', id)
     .maybeSingle();
   
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     console.error(`Error checking if user ${id} exists:`, error);
     throw new Error(`Failed to check if user ${id} exists`);
   }
@@ -222,15 +221,16 @@ export async function userExists(id: string): Promise<boolean> {
 }
 
 /**
- * Get user's activity summary
+ * Get a user's activity summary
  */
-export async function getUserActivity(
-  userId: string
-): Promise<{
+export async function getUserActivity(userId: string): Promise<{
   voteCount: number;
   commentCount: number;
   suggestedRequestCount: number;
 }> {
+  // Get appropriate database client
+  const supabase = getSupabaseClient();
+  
   // Get vote count
   const { data: votes, error: votesError } = await supabase
     .from('votes')

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type Comment = Database['public']['Tables']['comments']['Row'];
@@ -11,7 +11,7 @@ export async function getCommentsForRequest(
   requestId: string,
   includeVotes: boolean = false
 ): Promise<(Comment & { votes?: number, userVote?: -1 | 1 | null, replies?: (Comment & { votes?: number, userVote?: -1 | 1 | null })[] })[]> {
-  const { data: allComments, error } = await supabase
+  const { data: allComments, error } = await getSupabaseClient()
     .from('comments')
     .select('*')
     .eq('request_id', requestId)
@@ -34,7 +34,7 @@ export async function getCommentsForRequest(
   let voteData: { [key: string]: { total: number, userVote?: -1 | 1 | null } } = {};
   
   if (includeVotes) {
-    const { data: votes, error: votesError } = await supabase
+    const { data: votes, error: votesError } = await getSupabaseClient()
       .from('comment_votes')
       .select('*')
       .in('comment_id', commentIds);
@@ -93,7 +93,7 @@ export async function addComment(
   content: string,
   parentId?: string | null
 ): Promise<Comment> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('comments')
     .insert({
       user_id: userId,
@@ -121,7 +121,7 @@ export async function updateComment(
   content: string
 ): Promise<Comment> {
   // First check if the user is the owner of the comment
-  const { data: comment, error: fetchError } = await supabase
+  const { data: comment, error: fetchError } = await getSupabaseClient()
     .from('comments')
     .select('*')
     .eq('id', commentId)
@@ -137,7 +137,7 @@ export async function updateComment(
   }
   
   // Update the comment
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('comments')
     .update({
       content,
@@ -165,7 +165,7 @@ export async function deleteComment(
 ): Promise<void> {
   // First check if the user is the owner of the comment or an admin
   if (!isAdmin) {
-    const { data: comment, error: fetchError } = await supabase
+    const { data: comment, error: fetchError } = await getSupabaseClient()
       .from('comments')
       .select('*')
       .eq('id', commentId)
@@ -182,7 +182,7 @@ export async function deleteComment(
   }
   
   // Delete all comment votes first
-  const { error: voteDeleteError } = await supabase
+  const { error: voteDeleteError } = await getSupabaseClient()
     .from('comment_votes')
     .delete()
     .eq('comment_id', commentId);
@@ -193,7 +193,7 @@ export async function deleteComment(
   }
   
   // Delete the comment
-  const { error } = await supabase
+  const { error } = await getSupabaseClient()
     .from('comments')
     .delete()
     .eq('id', commentId);
@@ -213,7 +213,7 @@ export async function voteOnComment(
   value: -1 | 1
 ): Promise<CommentVote> {
   // Check if the user has already voted for this comment
-  const { data: existingVote, error: existingVoteError } = await supabase
+  const { data: existingVote, error: existingVoteError } = await getSupabaseClient()
     .from('comment_votes')
     .select('*')
     .eq('user_id', userId)
@@ -228,7 +228,7 @@ export async function voteOnComment(
   if (existingVote) {
     // If the user is voting the same way, remove the vote
     if (existingVote.value === value) {
-      const { error } = await supabase
+      const { error } = await getSupabaseClient()
         .from('comment_votes')
         .delete()
         .eq('id', existingVote.id);
@@ -242,7 +242,7 @@ export async function voteOnComment(
     }
     
     // Otherwise, update the vote value
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from('comment_votes')
       .update({ value })
       .eq('id', existingVote.id)
@@ -257,7 +257,7 @@ export async function voteOnComment(
     return data;
   } else {
     // Create a new vote
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseClient()
       .from('comment_votes')
       .insert({
         user_id: userId,
@@ -283,7 +283,7 @@ export async function getUserCommentVote(
   userId: string,
   commentId: string
 ): Promise<number> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('comment_votes')
     .select('value')
     .eq('user_id', userId)

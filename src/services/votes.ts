@@ -1,5 +1,4 @@
-import { supabase, getAuthClient } from '@/lib/supabase';
-import { getSupabaseClient, logTokenInfo } from '@/lib/clerk-supabase';
+import { getSupabaseClient, logTokenInfo, anonClient } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type Vote = Database['public']['Tables']['votes']['Row'];
@@ -328,7 +327,7 @@ export async function getUserVote(
  * Get all votes for a request
  */
 export async function getVotesForRequest(requestId: string): Promise<Vote[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('votes')
     .select('*')
     .eq('request_id', requestId);
@@ -345,7 +344,7 @@ export async function getVotesForRequest(requestId: string): Promise<Vote[]> {
  * Get vote statistics for a request
  */
 export async function getVoteStats(requestId: string): Promise<{ total: number, breakdown: { [key: string]: number } }> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('votes')
     .select('value')
     .eq('request_id', requestId);
@@ -374,8 +373,8 @@ export async function getUserVotes(
   userId: string,
   authToken?: string | null
 ): Promise<Vote[]> {
-  // Use the authenticated client if a token is provided
-  const client = authToken ? getAuthClient(authToken) : supabase;
+  // Use the appropriate client based on token availability
+  const client = getSupabaseClient(authToken);
   
   const { data, error } = await client
     .from('votes')

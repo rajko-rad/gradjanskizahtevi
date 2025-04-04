@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { syncUserWithSupabase, type User } from '@/services/users';
-import { supabase, getAuthClient, clearAuthClient, setSupabaseToken } from '@/lib/supabase';
+import { getSupabaseClient, anonClient, logTokenInfo } from '@/lib/clerk-supabase';
 
 // Debug mode toggle - set to true to enable detailed logging
 const DEBUG_MODE = true;
@@ -57,6 +57,20 @@ function logJwtDebug(token: string | null) {
     console.error("DEBUG: Error parsing JWT:", e);
   }
 }
+
+// Update token handling to use clerk-supabase methods
+const setSupabaseToken = async (token: string | null) => {
+  debugLog("setSupabaseToken replacement called");
+  
+  // If the token is null, we're clearing the auth state
+  if (!token) {
+    debugLog("Clearing token (user signed out)");
+    return;
+  }
+  
+  // Just log token info, the token will be used directly by getSupabaseClient
+  logTokenInfo(token);
+};
 
 /**
  * Hook to handle authentication between Clerk and Supabase
@@ -150,7 +164,7 @@ export function useSupabaseAuth() {
           
           if (token) {
             console.log("Successfully obtained Supabase JWT from Clerk");
-            logJwtDebug(token);
+            logTokenInfo(token);
             
             // Validate token format before using it
             const tokenParts = token.split('.');
@@ -179,14 +193,13 @@ export function useSupabaseAuth() {
               retryAttempts.current = 0;
               
               try {
-                // Set the token in Supabase session
-                debugLog("Setting Supabase token in session");
+                // Save the token for later use with getSupabaseClient
                 await setSupabaseToken(token);
                 authToken.current = token;
                 debugLog("Token saved to authToken.current");
                 setTokenVerified(true);
               } catch (tokenSetError) {
-                console.error("Error setting Supabase token:", tokenSetError);
+                console.error("Error setting token:", tokenSetError);
                 // Continue with user sync even if token setting fails
               }
             }
@@ -281,7 +294,7 @@ export function useSupabaseAuth() {
       if (authToken.current && isMounted.current) {
         try {
           debugLog("Verifying Supabase session with token...");
-          const client = getAuthClient(authToken.current);
+          const client = getSupabaseClient(authToken.current);
           debugLog("Got authenticated client");
           
           const { data, error } = await client.auth.getSession();
@@ -428,10 +441,10 @@ export function useSupabaseAuth() {
     // Only create a new client if we have a token
     if (authToken.current) {
       debugLog("supabaseClient using authenticated client");
-      return getAuthClient(authToken.current);
+      return getSupabaseClient(authToken.current);
     }
     debugLog("supabaseClient using anonymous client (no token)");
-    return supabase; // Use the anonymous client if no token is available
+    return anonClient; // Use the anonymous client if no token is available
   }, []);
 
   return {

@@ -1,4 +1,4 @@
-import { supabase, getAuthClient } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type Category = Database['public']['Tables']['categories']['Row'];
@@ -8,7 +8,7 @@ export type Resource = Database['public']['Tables']['resources']['Row'];
  * Fetch all categories with their resources
  */
 export async function getCategories(): Promise<(Category & { resources: Resource[] })[]> {
-  const { data: categories, error: categoriesError } = await supabase
+  const { data: categories, error: categoriesError } = await getSupabaseClient()
     .from('categories')
     .select('*')
     .order('id');
@@ -19,7 +19,7 @@ export async function getCategories(): Promise<(Category & { resources: Resource
   }
 
   // Fetch resources for all categories
-  const { data: resources, error: resourcesError } = await supabase
+  const { data: resources, error: resourcesError } = await getSupabaseClient()
     .from('resources')
     .select('*');
   
@@ -39,7 +39,7 @@ export async function getCategories(): Promise<(Category & { resources: Resource
  * Get a single category by ID with resources
  */
 export async function getCategoryById(id: string): Promise<Category & { resources: Resource[] }> {
-  const { data: category, error: categoryError } = await supabase
+  const { data: category, error: categoryError } = await getSupabaseClient()
     .from('categories')
     .select('*')
     .eq('id', id)
@@ -51,7 +51,7 @@ export async function getCategoryById(id: string): Promise<Category & { resource
   }
 
   // Fetch resources for this category
-  const { data: resources, error: resourcesError } = await supabase
+  const { data: resources, error: resourcesError } = await getSupabaseClient()
     .from('resources')
     .select('*')
     .eq('category_id', id);
@@ -73,7 +73,7 @@ export async function getCategoryById(id: string): Promise<Category & { resource
 export async function createCategory(
   category: Database['public']['Tables']['categories']['Insert']
 ): Promise<Category> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('categories')
     .insert(category)
     .select()
@@ -94,7 +94,7 @@ export async function updateCategory(
   id: string,
   updates: Database['public']['Tables']['categories']['Update']
 ): Promise<Category> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('categories')
     .update(updates)
     .eq('id', id)
@@ -113,7 +113,7 @@ export async function updateCategory(
  * Delete a category
  */
 export async function deleteCategory(id: string): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getSupabaseClient()
     .from('categories')
     .delete()
     .eq('id', id);
@@ -130,7 +130,7 @@ export async function deleteCategory(id: string): Promise<void> {
 export async function addResource(
   resource: Database['public']['Tables']['resources']['Insert']
 ): Promise<Resource> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('resources')
     .insert(resource)
     .select()
@@ -148,7 +148,7 @@ export async function addResource(
  * Remove a resource
  */
 export async function deleteResource(id: string): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getSupabaseClient()
     .from('resources')
     .delete()
     .eq('id', id);
@@ -166,10 +166,10 @@ export async function deleteResource(id: string): Promise<void> {
  */
 export async function getCategoryStats(categoryId: string): Promise<{ totalVotes: number, totalRequests: number }> {
   try {
-    const client = getAuthClient(null);
+    const supabase = getSupabaseClient();
 
     // Get total requests in this category
-    const { count: requestCount, error: requestError } = await client
+    const { count: requestCount, error: requestError } = await supabase
       .from('requests')
       .select('*', { count: 'exact', head: true })
       .eq('category_id', categoryId);
@@ -180,7 +180,7 @@ export async function getCategoryStats(categoryId: string): Promise<{ totalVotes
     }
 
     // Count total votes across all requests in this category
-    const { data: requests, error: requestsError } = await client
+    const { data: requests, error: requestsError } = await supabase
       .from('requests')
       .select('id')
       .eq('category_id', categoryId);
@@ -195,7 +195,7 @@ export async function getCategoryStats(categoryId: string): Promise<{ totalVotes
     if (requests.length > 0) {
       const requestIds = requests.map(req => req.id);
       
-      const { count: voteCount, error: voteError } = await client
+      const { count: voteCount, error: voteError } = await supabase
         .from('votes')
         .select('*', { count: 'exact', head: true })
         .in('request_id', requestIds);

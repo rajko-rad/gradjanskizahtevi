@@ -1,4 +1,4 @@
-import { supabase, getAuthClient } from '@/lib/supabase';
+import { getSupabaseClient, anonClient } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 // Request with additional properties
@@ -19,6 +19,7 @@ export type Option = Database['public']['Tables']['options']['Row'];
  * Fetch all requests with their options
  */
 export async function getRequests(): Promise<(Request & { options: Option[] })[]> {
+  const supabase = getSupabaseClient();
   const { data: requests, error: requestsError } = await supabase
     .from('requests')
     .select('*')
@@ -50,6 +51,7 @@ export async function getRequests(): Promise<(Request & { options: Option[] })[]
  * Get requests by category ID
  */
 export async function getRequestsByCategory(categoryId: string): Promise<(Request & { options: Option[] })[]> {
+  const supabase = getSupabaseClient();
   const { data: requests, error: requestsError } = await supabase
     .from('requests')
     .select('*')
@@ -90,6 +92,7 @@ export async function getRequestsByCategory(categoryId: string): Promise<(Reques
  * Get a single request by ID with options
  */
 export async function getRequestById(id: string): Promise<Request & { options: Option[] }> {
+  const supabase = getSupabaseClient();
   const { data: request, error: requestError } = await supabase
     .from('requests')
     .select('*')
@@ -125,6 +128,7 @@ export async function createRequest(
   request: Database['public']['Tables']['requests']['Insert'],
   options?: string[]
 ): Promise<Request & { options: Option[] }> {
+  const supabase = getSupabaseClient();
   // Start a Supabase transaction
   const { data, error } = await supabase
     .from('requests')
@@ -172,6 +176,7 @@ export async function updateRequest(
   id: string,
   updates: Database['public']['Tables']['requests']['Update']
 ): Promise<Request> {
+  const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('requests')
     .update(updates)
@@ -191,6 +196,7 @@ export async function updateRequest(
  * Delete a request and its options
  */
 export async function deleteRequest(id: string): Promise<void> {
+  const supabase = getSupabaseClient();
   // Delete options first
   const { error: optionsError } = await supabase
     .from('options')
@@ -203,13 +209,13 @@ export async function deleteRequest(id: string): Promise<void> {
   }
 
   // Then delete the request
-  const { error } = await supabase
+  const { error: requestError } = await supabase
     .from('requests')
     .delete()
     .eq('id', id);
   
-  if (error) {
-    console.error(`Error deleting request with ID ${id}:`, error);
+  if (requestError) {
+    console.error(`Error deleting request with ID ${id}:`, requestError);
     throw new Error(`Failed to delete request with ID ${id}`);
   }
 }
@@ -219,7 +225,7 @@ export async function deleteRequest(id: string): Promise<void> {
  */
 export async function getVoteCounts(requestId: string): Promise<{ [key: string]: number }> {
   try {
-    const client = getAuthClient(null);
+    const client = getSupabaseClient(null);
 
     const { data: votes, error } = await client
       .from('votes')
@@ -251,7 +257,7 @@ export async function getVoteCounts(requestId: string): Promise<{ [key: string]:
  */
 export async function getPopularRequests(limit: number = 10): Promise<ExtendedRequest[]> {
   try {
-    const client = getAuthClient(null);
+    const client = getSupabaseClient(null);
     
     const { data, error } = await client
       .from('requests')
@@ -280,7 +286,7 @@ export async function getPopularRequests(limit: number = 10): Promise<ExtendedRe
  */
 export async function getRecentRequests(limit: number = 10): Promise<ExtendedRequest[]> {
   try {
-    const client = getAuthClient(null);
+    const client = getSupabaseClient(null);
     
     const { data, error } = await client
       .from('requests')
