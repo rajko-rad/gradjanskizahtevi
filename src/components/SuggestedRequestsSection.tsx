@@ -1,12 +1,12 @@
-
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { SuggestRequestForm } from "./SuggestRequestForm";
 import { SuggestedRequestCard } from "./SuggestedRequestCard";
-import { suggestedRequests } from "@/data/mockData";
 import { Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSuggestedRequests } from "@/hooks/use-queries";
+import { Loader2 } from "lucide-react";
 import {
   Pagination,
   PaginationContent,
@@ -25,14 +25,15 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
   const [expanded, setExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   
-  const filteredRequests = suggestedRequests.filter(request => request.categoryId === categoryId);
+  const { data: suggestedRequests, isLoading, error } = useSuggestedRequests(categoryId);
+  
   const itemsPerPage = 5;
-  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+  const totalPages = Math.ceil((suggestedRequests?.length || 0) / itemsPerPage);
   
   // Get current items
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredRequests.slice(indexOfFirstItem, indexOfLastItem);
+  const currentItems = suggestedRequests?.slice(indexOfFirstItem, indexOfLastItem) || [];
 
   const handleSuccess = () => {
     setShowForm(false);
@@ -51,11 +52,11 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
     <div className="mt-6 pt-2">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-sm font-medium text-gray-600">
-          Predlozi građana ({filteredRequests.length})
+          Predlozi građana ({suggestedRequests?.length || 0})
         </h3>
         
         <div className="flex items-center gap-2">
-          {filteredRequests.length > 5 && (
+          {suggestedRequests && suggestedRequests.length > 5 && (
             <Button 
               variant="ghost" 
               size="sm" 
@@ -93,7 +94,16 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
         </div>
       </div>
       
-      {filteredRequests.length > 0 ? (
+      {isLoading ? (
+        <div className="text-center py-3 bg-gray-50 rounded-md">
+          <Loader2 className="w-5 h-5 mx-auto animate-spin text-gray-400" />
+          <p className="text-xs text-gray-500 mt-2">Učitavanje predloga...</p>
+        </div>
+      ) : error ? (
+        <div className="text-center py-3 bg-gray-50 rounded-md">
+          <p className="text-xs text-red-500">Došlo je do greške pri učitavanju predloga.</p>
+        </div>
+      ) : suggestedRequests && suggestedRequests.length > 0 ? (
         <div className="border rounded-md bg-white">
           <ScrollArea className={expanded ? "max-h-[400px]" : ""}>
             <div>
@@ -103,9 +113,9 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
                   id={request.id}
                   title={request.title}
                   description={request.description}
-                  author={request.author}
-                  timestamp={request.timestamp}
-                  votes={request.votes}
+                  voteCount={request.voteCount}
+                  userVote={request.user_vote}
+                  createdAt={request.created_at}
                 />
               ))}
             </div>

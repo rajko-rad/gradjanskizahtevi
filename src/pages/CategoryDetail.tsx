@@ -1,4 +1,3 @@
-
 import { useParams } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -52,13 +51,13 @@ const CategoryDetail = () => {
               categoryRequests.map((request) => (
                 <VoteCard 
                   key={request.id}
+                  id={request.id}
                   title={request.title}
                   description={request.description}
                   type={request.type as "yesno" | "multiple" | "range"}
                   options={request.options}
                   min={request.min}
                   max={request.max}
-                  initialVotes={request.initialVotes}
                   hasComments={request.hasComments}
                 />
               ))

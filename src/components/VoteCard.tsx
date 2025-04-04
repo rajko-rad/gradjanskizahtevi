@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -8,11 +7,24 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronUp,
-  CheckCircle2
+  CheckCircle2,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CommentSystem } from "./CommentSystem";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@clerk/clerk-react";
+import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
+import { 
+  useVoteStats, 
+  useCastVote, 
+  useRemoveVote, 
+  useUserVote, 
+  useComments
+} from "@/hooks/use-queries";
 
 interface VoteCardProps {
+  id: string;
   title: string;
   description?: string;
   type: "yesno" | "multiple" | "range";
@@ -20,10 +32,10 @@ interface VoteCardProps {
   min?: number;
   max?: number;
   hasComments?: boolean;
-  initialVotes?: {[key: string]: number};
 }
 
 export function VoteCard({ 
+  id,
   title, 
   description, 
   type, 
@@ -31,24 +43,189 @@ export function VoteCard({
   min = 3, 
   max = 18,
   hasComments = true,
-  initialVotes = {} 
 }: VoteCardProps) {
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { isSignedIn } = useAuth();
+  const { canVote, isLoading: isAuthLoading } = useSupabaseAuth();
   const [showComments, setShowComments] = useState(false);
-  const [votes, setVotes] = useState(initialVotes);
   const [rangeValue, setRangeValue] = useState(min);
 
+  // Fetch vote statistics
+  const { 
+    data: voteStats, 
+    isLoading: isLoadingStats 
+  } = useVoteStats(id);
+  
+  // Fetch user's existing vote
+  const { 
+    data: userVote, 
+    isLoading: isLoadingUserVote,
+    error: userVoteError 
+  } = useUserVote(id);
+
+  // If there's an error fetching the user vote, log it but don't break the UI
+  useEffect(() => {
+    if (userVoteError) {
+      console.error("Error loading user vote:", userVoteError);
+    }
+  }, [userVoteError]);
+
+  // Set up voting mutations
+  const { mutate: castVote, isPending: isCastingVote } = useCastVote();
+  const { mutate: removeVote, isPending: isRemovingVote } = useRemoveVote();
+
+  // Fetch comments
+  const { data: comments, isLoading: isLoadingComments } = useComments(
+    id, 
+    showComments
+  );
+
+  // Update selected option based on user's vote
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (userVote) {
+      setSelectedOption(userVote.value);
+    } else {
+      setSelectedOption(null);
+    }
+  }, [userVote]);
+
+  // Handle voting
   const handleVote = (option: string) => {
-    setSelectedOption(option);
-    setVotes(prev => ({
-      ...prev,
-      [option]: (prev[option] || 0) + 1
-    }));
+    if (!isSignedIn) {
+      toast({
+        title: "Prijavite se",
+        description: "Morate biti prijavljeni da biste mogli da glasate.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!canVote) {
+      toast({
+        title: "Greška sa autentikacijom",
+        description: "Došlo je do greške sa vašom autentikacijom. Pokušajte da se odjavite i ponovo prijavite.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate that request ID exists
+    if (!id) {
+      toast({
+        title: "Greška",
+        description: "Neispravan ID zahteva.",
+        variant: "destructive"
+      });
+      console.error("Attempted to vote with invalid request ID:", id);
+      return;
+    }
+
+    // If already voted for this option, remove the vote
+    if (selectedOption === option) {
+      removeVote({ requestId: id }, {
+        onSuccess: () => {
+          toast({
+            title: "Glas uklonjen",
+            description: "Vaš glas je uspešno uklonjen.",
+          });
+        },
+        onError: (error) => {
+          console.error("Error removing vote:", error);
+          toast({
+            title: "Greška",
+            description: error.message || "Došlo je do greške prilikom uklanjanja glasa.",
+            variant: "destructive"
+          });
+        }
+      });
+    } else {
+      // Cast or update vote
+      castVote({ 
+        requestId: id, 
+        value: option,
+        optionId: type === 'multiple' ? option : undefined
+      }, {
+        onSuccess: () => {
+          toast({
+            title: "Glas zabeležen",
+            description: "Vaš glas je uspešno zabeležen.",
+          });
+        },
+        onError: (error) => {
+          console.error("Voting error:", error);
+          toast({
+            title: "Greška",
+            description: error.message || "Došlo je do greške prilikom glasanja.",
+            variant: "destructive"
+          });
+        }
+      });
+    }
+  };
+
+  // Handle range voting
+  const handleRangeVote = () => {
+    if (!isSignedIn) {
+      toast({
+        title: "Prijavite se",
+        description: "Morate biti prijavljeni da biste mogli da glasate.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!canVote) {
+      toast({
+        title: "Greška sa autentikacijom",
+        description: "Došlo je do greške sa vašom autentikacijom. Pokušajte da se odjavite i ponovo prijavite.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate that request ID exists
+    if (!id) {
+      toast({
+        title: "Greška",
+        description: "Neispravan ID zahteva.",
+        variant: "destructive"
+      });
+      console.error("Attempted to vote with invalid request ID:", id);
+      return;
+    }
+
+    castVote({ 
+      requestId: id, 
+      value: rangeValue.toString() 
+    }, {
+      onSuccess: () => {
+        toast({
+          title: "Glas zabeležen",
+          description: "Vaš glas je uspešno zabeležen.",
+        });
+      },
+      onError: (error) => {
+        console.error("Range voting error:", error);
+        toast({
+          title: "Greška",
+          description: error.message || "Došlo je do greške prilikom glasanja.",
+          variant: "destructive"
+        });
+      }
+    });
   };
 
   const renderVoteOptions = () => {
+    const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote || isAuthLoading;
+
     switch (type) {
       case "yesno":
+        const yesVotes = voteStats?.['yes'] || 0;
+        const noVotes = voteStats?.['no'] || 0;
+        const totalYesNoVotes = yesVotes + noVotes;
+        
         return (
           <div className="flex flex-col sm:flex-row gap-4 mt-4">
             <Button
@@ -58,9 +235,14 @@ export function VoteCard({
                 selectedOption === "yes" && "bg-green-100 border-green-300"
               )}
               variant="outline"
+              disabled={isLoading}
             >
-              <ThumbsUp className="mr-2 h-4 w-4" />
-              Da {votes["yes"] ? `(${votes["yes"]})` : ""}
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ThumbsUp className="mr-2 h-4 w-4" />
+              )}
+              Da {totalYesNoVotes > 0 && `(${yesVotes})`}
               {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-4 w-4 text-green-600" />}
             </Button>
             <Button
@@ -70,9 +252,14 @@ export function VoteCard({
                 selectedOption === "no" && "bg-red-100 border-red-300"
               )}
               variant="outline"
+              disabled={isLoading}
             >
-              <ThumbsDown className="mr-2 h-4 w-4" />
-              Ne {votes["no"] ? `(${votes["no"]})` : ""}
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ThumbsDown className="mr-2 h-4 w-4" />
+              )}
+              Ne {totalYesNoVotes > 0 && `(${noVotes})`}
               {selectedOption === "no" && <CheckCircle2 className="ml-2 h-4 w-4 text-red-600" />}
             </Button>
           </div>
@@ -80,26 +267,35 @@ export function VoteCard({
       case "multiple":
         return (
           <div className="flex flex-col gap-3 mt-6">
-            {options.map((option, index) => (
-              <Button
-                key={index}
-                onClick={() => handleVote(option)}
-                className={cn(
-                  "justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all",
-                  selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
-                )}
-                variant="outline"
-              >
-                <span>{option}</span>
-                <span className="flex items-center">
-                  {votes[option] ? 
-                    <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
-                      {votes[option]}
-                    </span> : null}
-                  {selectedOption === option && <CheckCircle2 className="ml-2 h-4 w-4 text-blue-600" />}
-                </span>
-              </Button>
-            ))}
+            {options.map((option, index) => {
+              const voteCount = voteStats?.[option] || 0;
+              return (
+                <Button
+                  key={index}
+                  onClick={() => handleVote(option)}
+                  className={cn(
+                    "justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all",
+                    selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
+                  )}
+                  variant="outline"
+                  disabled={isLoading}
+                >
+                  <span>{option}</span>
+                  <span className="flex items-center">
+                    {voteCount > 0 && 
+                      <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+                        {voteCount}
+                      </span>
+                    }
+                    {isLoading ? (
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    ) : selectedOption === option ? (
+                      <CheckCircle2 className="ml-2 h-4 w-4 text-blue-600" />
+                    ) : null}
+                  </span>
+                </Button>
+              );
+            })}
           </div>
         );
       case "range":
@@ -116,6 +312,7 @@ export function VoteCard({
               value={rangeValue}
               onChange={(e) => setRangeValue(parseInt(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-serbia-blue"
+              disabled={isLoading}
             />
             <div className="mt-3 text-center">
               <span className="text-sm font-medium bg-serbia-blue/10 text-serbia-blue px-3 py-1 rounded-full">
@@ -123,10 +320,14 @@ export function VoteCard({
               </span>
             </div>
             <Button 
-              onClick={() => handleVote(rangeValue.toString())}
+              onClick={handleRangeVote}
               className="w-full mt-6 bg-serbia-blue hover:bg-serbia-blue/90"
               variant="default"
+              disabled={isLoading}
             >
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               Glasaj
             </Button>
           </div>
@@ -159,10 +360,20 @@ export function VoteCard({
             </Button>
             
             {showComments && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 text-center">
-                  Prijavite se da biste komentarisali
-                </p>
+              <div className="mt-4">
+                {isLoadingComments ? (
+                  <div className="p-4 flex justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-serbia-blue" />
+                  </div>
+                ) : !canVote ? (
+                  <div className="p-4 bg-gray-50 rounded-lg text-center">
+                    <p className="text-sm text-gray-600">
+                      Prijavite se da biste komentarisali
+                    </p>
+                  </div>
+                ) : (
+                  <CommentSystem requestId={id} comments={comments || []} />
+                )}
               </div>
             )}
           </div>

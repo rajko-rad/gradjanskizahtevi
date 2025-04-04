@@ -1,4 +1,3 @@
-
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { VoteCard } from "@/components/VoteCard";
@@ -11,8 +10,13 @@ import {
   Clock,
   Calendar
 } from "lucide-react";
+import { useAuth, useUser, SignInButton, SignUpButton } from "@clerk/clerk-react";
+import { Link } from "react-router-dom";
 
 const Index = () => {
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
+  
   // Timeline/events data
   const timelineEvents = [
     {
@@ -115,13 +119,13 @@ const Index = () => {
                   {categoryRequests.map((request) => (
                     <div key={request.id} className="flex flex-col h-full">
                       <VoteCard 
+                        id={request.id}
                         title={request.title}
                         description={request.description}
                         type={request.type as "yesno" | "multiple" | "range"}
                         options={request.options}
                         min={request.min}
                         max={request.max}
-                        initialVotes={request.initialVotes}
                         hasComments={request.hasComments}
                       />
                     </div>
@@ -177,9 +181,31 @@ const Index = () => {
             <p className="text-xl text-gray-100 mb-8 leading-relaxed">
               Registrujte se kako biste aktivno učestvovali u glasanju i diskusijama o budućnosti Srbije
             </p>
-            <Button size="lg" className="bg-white text-serbia-blue hover:bg-gray-100 shadow-lg px-8">
-              Registruj se
-            </Button>
+            
+            {isSignedIn ? (
+              <div className="flex flex-col items-center gap-4">
+                <p className="text-white">Dobrodošli, {user?.firstName || 'Korisniče'}</p>
+                <Link to="/user-profile">
+                  <Button size="lg" className="bg-white text-serbia-blue hover:bg-gray-100 shadow-lg px-8">
+                    Moj Profil
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="flex gap-4 flex-wrap justify-center">
+                <SignInButton mode="modal">
+                  <Button size="lg" variant="outline" className="bg-transparent border-white text-white hover:bg-white/10 shadow-lg px-8">
+                    Prijavi se
+                  </Button>
+                </SignInButton>
+                
+                <SignUpButton mode="modal">
+                  <Button size="lg" className="bg-white text-serbia-blue hover:bg-gray-100 shadow-lg px-8">
+                    Registruj se
+                  </Button>
+                </SignUpButton>
+              </div>
+            )}
           </div>
         </div>
       </section>

@@ -1,0 +1,234 @@
+I want to make a modern and very clean and beatuiful looking website. It should most likely hav ethe following stack:
+Frontend: React with Vite
+Styling: Tailwind CSS + shadcn/ui components
+Authentication: Clerk
+Backend: Supabase (PostgreSQL)
+Hosting: Cloudflare Pages
+
+
+The primary idea is to get people to vote on and understand user preferences around potential political reuqests of the serbian government... so I need some good way to auth people to make sure they are real humans and then I also need some voting and commenting system so people cna collaborate... 
+
+This is the content I want on the site and the types of voting and commenting places:
+# Potencijalni ujedinjeni zahtevi
+
+1. Mediji
+   a. Smena celnika RTS [glasanje da ili ne]
+      i. [komentari]
+   b. Smena celnika REM [glasanje da ili ne]
+      i. [komentari]
+
+2. Izborni uslovi
+   a. **Podrzavamo** zahtev za ciscenje birackih spiskova i poboljšanje izbornih uslova
+   b. [Komentari o izbornim uslovima]
+
+3. Sluzbe Bezbednosti
+   a. Smena celnika BIA [glasanje da ili ne]
+   b. [Komentari o BIA]
+
+4. Pravosudje
+   a. Smena Zagorke Dolovac [glasanje da ili ne]
+   b. [komentari o pravosuđju]
+
+5. Prelazna/Tehnicka/Ekspertska Vlada pred Slobodne Izbore
+   a. **Podrzavamo** prelaznu/ekspertsku/tehnicku vladu [glasanje da ili ne]
+   b. [komentari o ideji neke ovakve vlade pred izbore]
+   
+   c. Termin trajanja pred slobodne izbore:
+      i. [Glasanje od 3-18 meseci]
+      ii. [komentar o trajanju]
+   
+   d. Sastav prelazne vlade:
+      i. [Glasanje, opcije:
+         1. Ekspertska izabrana od strane studenata
+         2. Prelazna, opozicija + nestranacka lica i eksperti
+         3. Prelazna, zajedno sa SNS]
+      ii. [komentar o sastavu]
+
+6. Sastav opozicione liste za slobodne izbore:
+   a. [Glasanje, opcije:
+      i. Jedna lista: svi zajedno
+      ii. Dve liste: jedna levica, jedna desnica]
+   b. [komentari o listi]
+
+
+###
+For the votes, I jsut want a really movile friendly way of voting
+For the comments, I want it reddit style, where people can upvote and downvote posts and threads and subthreads will be ordered accordingly... 
+
+Can you please help me mock up an mvp of this and outline steps? I can provide things like clerk and supabase keys later on... 
+
+The repo and site will be called gradjanksizahtevi.org  I own the domain on github... I don't have a github repo yet but you can make it, we are in that folder now
+
+
+
+mplete voting and commenting system, featuring Serbian-themed colors and a mobile-friendly interface.
+
+What's next?
+Refine & Customize: Tweak the design, animations, and layouts via prompts or visual edits.
+Master Prompting: Use clear, detailed, and iterative prompts for better outcomes.
+GitHub Sync: Transfer your project's code to GitHub for two-way sync of edits.
+Debug with Ease: Activate our experimental “chat mode” to troubleshoot issues quickly.
+Add project knowledge: Set key context or custom instructions you want to include in every edit in this project.
+Given your project's need for user authentication, data storage (votes, comments), and a backend, you'll be heavily utilizing Supabase. You'll also be using Clerk for authentication.
+
+Visit docs
+Explore Supabase
+Manage knowledge
+
+
+The design has been modernized with a cleaner, more professional look that emphasizes the official nature of the platform. Key improvements include a more polished hero section with wave decoration, refined typography, proper spacing, enhanced card designs, and better use of the Serbian color scheme throughout the site.
+
+can you make the top banner have a button for each topic instead of the two currently there? Also get rid of the gradient thing that is ugly
+lovable logo
+Lovable
+18:44 on Apr 03, 2025
+
+I'll update the Header component to include buttons for each topic instead of the current menu items, and remove the gradient effect.
+
+
+
+Restore
+Preview
+
+Refactor: Update header with topic buttons
+View code
+I've updated the Header component to include buttons for each key topic (Mediji, Izborni uslovi, Službe bezbednosti, Pravosuđe, and Prelazna vlada) with navigation links. I've also removed the gradient effect, keeping the header clean with a simple white background and subtle shadow. The mobile menu has been updated to include these same topic links.
+
+
+
+
+lovable logo
+Lovable
+18:46 on Apr 03, 2025
+
+I'll update the hero banner section with topic buttons instead of the current design, simplify the top navigation, and add a timeline/events section.
+
+
+
+Restore
+Preview
+
+Refactor: Update banner and add timeline section
+View code
+I've made the requested changes by simplifying the top navigation to just include "Zahtevi" and "Resursi", adding category buttons to the banner section, adding resource links for each request, and creating a new timeline/events section that shows chronological activities by different social actors. The gradient background on the banner was also removed for a cleaner look.
+
+the resources and more info should be by category, not by the requests ... Drop the recent discussions thing... Also, add the Hronologija zahteva to the top wuth zahtevi and Resursi, but give it a different name, shroter... something like Aktuelno
+
+ Also find abbreviated names for the 6 butons
+
+oh and also merge the last ctwo categories, just have it be 4 things voting on in one category
+lovable logo
+Lovable
+18:50 on Apr 03, 2025
+
+I'll make the requested changes to update the layout, navigation, and organize the resources by category instead of individual requests. I'll also abbreviate the category buttons and merge the last two categories.
+
+
+
+Restore
+Preview
+
+Refactor: Improve layout and content organization
+View code
+I've made the following changes:
+
+Updated the Header to include "Aktuelno" in the navigation menu alongside "Zahtevi" and "Resursi"
+Added abbreviated names (MED, IZB, BEZ, PRA, VLA) for the category buttons
+Merged the "government" and "opposition" categories into a single "Prelazna Vlada i Opozicija" category
+Added resources section for each category instead of for individual requests
+Removed the "Recent Discussions" section
+Renamed "Hronologija zahteva" to "Aktuelno" in both the navigation and the section title
+Refactor Index.tsx into smaller components
+The abbreviations should be full workds people can understand
+lovable logo
+Lovable
+18:51 on Apr 03, 2025
+
+I'll update the category abbreviations to be more user-friendly full words instead of just short codes.
+
+
+
+Restore
+Preview
+
+Refactor: Expand abbreviations for clarity
+View code
+I've updated the shortTitle field for each category to use full, understandable words instead of the three-letter abbreviations. These more descriptive labels will be more intuitive for users while still being concise enough for buttons.
+
+can we add a thing for suggesting new requests under each category, as well as a UI for viewing and voting on new suggested requests? 
+lovable logo
+Lovable
+18:56 on Apr 03, 2025
+
+I'll add functionality for suggesting new requests under each category and a UI for viewing and voting on suggested requests.
+
+
+
+Restore
+Preview
+
+Add request suggestion feature
+View code
+I've added a complete system for suggesting, viewing, and voting on new requests. Each category now has a "Suggested Requests" section with a button to propose new requests and cards displaying existing suggestions. Users can vote on suggested requests, and the form for submitting new requests includes validation.
+
+for the reccomended requests, can you make them shorter, make it clearer they are still part of the broader cateogry and not some new visual element, dont put the name of the person, maybe make them more like a table and when you hover you get the full element or something like that_
+lovable logo
+Lovable
+19:00 on Apr 03, 2025
+
+Looking at the suggested requests section, I'll make it more compact and visually integrated with its parent category.
+
+
+
+Restore
+Preview
+
+Refactor suggested requests section
+View code
+These changes make the suggested requests section more compact and integrated with each category. The suggestions now appear in a table-like format with a hover card that reveals the full details when users hover over an item. I've removed the author name from the main view, made the buttons smaller, and adjusted the styling to better blend with the parent category.
+
+can you show some examples of how it will look when there are a lot more suggestions per cateogry, like 5-15?
+lovable logo
+Lovable
+19:03 on Apr 03, 2025
+
+I'd be happy to show you how the suggestions section would look with more entries. Let me provide a visualization of how 5-15 suggested requests per category would appear with the current design.
+
+
+
+Restore
+Preview
+
+Refactor: Improve suggested requests section
+View code
+With these changes, I've demonstrated how the suggestions section will handle 5-15 items per category. Here's what I've implemented:
+
+Added many more sample suggested requests in the mockData.ts file (6 for media, 5 for elections, 3 for judiciary, and 2 for security)
+
+Enhanced the SuggestedRequestsSection with:
+
+Pagination that shows 5 items per page
+A counter showing the total number of suggestions in the heading
+An expand/collapse button to toggle between compact and expanded view
+A scrollable area when expanded to handle many items
+Smart pagination that adapts to the number of pages
+Kept the SuggestedRequestCard compact and hover-friendly design
+
+This implementation provides a clean interface that scales well with more suggestions while maintaining a consistent look and feel with the rest of your application.
+
+Refactor mockData.ts
+ok, change Izbori to Izborni Uslovi
+lovable logo
+Lovable
+19:17 on Apr 03, 2025
+
+I'll update the shortTitle for the "elections" category from "Izbori" to "Izborni Uslovi" in the mockData file.
+
+
+
+Restore
+Preview
+
+Rename "Izbori" to "Izborni Uslovi"
+View code
+The shortTitle for the "elections" category has been updated from "Izbori" to "Izborni Uslovi".

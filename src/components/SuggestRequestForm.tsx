@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
+import { useCreateSuggestedRequest } from "@/hooks/use-queries";
 
 const formSchema = z.object({
   title: z.string().min(5, { message: "Naslov mora imati najmanje 5 karaktera" }),
@@ -22,8 +22,8 @@ interface SuggestRequestFormProps {
 }
 
 export function SuggestRequestForm({ categoryId, onSuccess }: SuggestRequestFormProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const { mutate: createSuggestedRequest, isPending: isSubmitting } = useCreateSuggestedRequest();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -34,22 +34,34 @@ export function SuggestRequestForm({ categoryId, onSuccess }: SuggestRequestForm
   });
 
   function onSubmit(data: FormValues) {
-    setIsSubmitting(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      toast({
-        title: "Zahtev poslat",
-        description: "Vaš predlog zahteva je uspešno poslat na razmatranje.",
-      });
-      
-      form.reset();
-      setIsSubmitting(false);
-      
-      if (onSuccess) {
-        onSuccess();
+    createSuggestedRequest(
+      {
+        categoryId,
+        title: data.title,
+        description: data.description
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Zahtev poslat",
+            description: "Vaš predlog zahteva je uspešno poslat na razmatranje.",
+          });
+          
+          form.reset();
+          
+          if (onSuccess) {
+            onSuccess();
+          }
+        },
+        onError: (error) => {
+          toast({
+            title: "Greška",
+            description: error.message || "Došlo je do greške prilikom slanja predloga.",
+            variant: "destructive",
+          });
+        }
       }
-    }, 1000);
+    );
   }
 
   return (
