@@ -3,12 +3,60 @@ import { useAuth, useUser } from '@clerk/clerk-react';
 import { syncUserWithSupabase, type User } from '@/services/users';
 import { supabase, getAuthClient, clearAuthClient, setSupabaseToken } from '@/lib/supabase';
 
+// Debug mode toggle - set to true to enable detailed logging
+const DEBUG_MODE = true;
+
+// Debug logger function that only logs when debug mode is enabled
+function debugLog(message: string, ...args: any[]) {
+  if (DEBUG_MODE) {
+    console.log(`DEBUG: ${message}`, ...args);
+  }
+}
+
 // Minimum time between auth sync attempts in milliseconds
 const MIN_SYNC_INTERVAL = 5000;
 // Maximum retries for token acquisition
 const MAX_TOKEN_RETRIES = 3;
 // Global flag to prevent multiple hook instances from syncing simultaneously
 let GLOBAL_SYNC_IN_PROGRESS = false;
+
+/**
+ * Debugging function to safely log JWT information
+ */
+function logJwtDebug(token: string | null) {
+  if (!DEBUG_MODE) return;
+  
+  if (!token) {
+    console.log("DEBUG: Token is null or empty");
+    return;
+  }
+  
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      console.log("DEBUG: Invalid JWT format - doesn't have 3 parts");
+      return;
+    }
+    
+    // Decode the payload (middle part)
+    const payloadBase64 = parts[1];
+    const payload = JSON.parse(atob(payloadBase64));
+    
+    // Log important JWT claims without revealing the whole token
+    console.log("DEBUG: JWT token details:", {
+      sub: payload.sub,
+      aud: payload.aud,
+      role: payload.role,
+      exp: new Date(payload.exp * 1000).toISOString(),
+      iat: payload.iat ? new Date(payload.iat * 1000).toISOString() : undefined,
+      jti: payload.jti ? payload.jti.substring(0, 6) + '...' : undefined,
+      length: token.length,
+      format: 'header.payload.signature'
+    });
+  } catch (e) {
+    console.error("DEBUG: Error parsing JWT:", e);
+  }
+}
 
 /**
  * Hook to handle authentication between Clerk and Supabase
@@ -36,6 +84,15 @@ export function useSupabaseAuth() {
   const isMounted = useRef(true);
 
   const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
+    debugLog(`syncUserWithClerk called with forceRefresh = ${forceRefresh}`);
+    debugLog("Current state:", { 
+      inProgress: syncInProgress.current, 
+      globalInProgress: GLOBAL_SYNC_IN_PROGRESS,
+      initialized: isInitialized.current,
+      currentToken: authToken.current ? 'exists' : 'missing',
+      retryAttempts: retryAttempts.current
+    });
+    
     // Skip if already syncing (either in this hook instance or globally)
     if (syncInProgress.current || GLOBAL_SYNC_IN_PROGRESS) {
       console.log('Sync already in progress, skipping');
@@ -83,10 +140,17 @@ export function useSupabaseAuth() {
       if (forceRefresh || !authToken.current) {
         try {
           console.log("Getting Supabase JWT from Clerk...");
+          debugLog("Clerk user state:", {
+            id: user.id,
+            primaryEmail: user.primaryEmailAddress?.emailAddress,
+            isSignedIn
+          });
+          
           const token = await getToken({ template: "supabase" });
           
           if (token) {
             console.log("Successfully obtained Supabase JWT from Clerk");
+            logJwtDebug(token);
             
             // Validate token format before using it
             const tokenParts = token.split('.');
@@ -116,8 +180,10 @@ export function useSupabaseAuth() {
               
               try {
                 // Set the token in Supabase session
+                debugLog("Setting Supabase token in session");
                 await setSupabaseToken(token);
                 authToken.current = token;
+                debugLog("Token saved to authToken.current");
                 setTokenVerified(true);
               } catch (tokenSetError) {
                 console.error("Error setting Supabase token:", tokenSetError);
@@ -214,8 +280,17 @@ export function useSupabaseAuth() {
       // Verify Supabase session if we have a token
       if (authToken.current && isMounted.current) {
         try {
+          debugLog("Verifying Supabase session with token...");
           const client = getAuthClient(authToken.current);
+          debugLog("Got authenticated client");
+          
           const { data, error } = await client.auth.getSession();
+          debugLog("getSession result:", { 
+            success: !error,
+            hasSession: !!data?.session,
+            errorCode: error?.code,
+            errorMessage: error?.message
+          });
           
           if (error || !data.session) {
             console.warn("Supabase session verification failed:", error?.message);
@@ -243,15 +318,24 @@ export function useSupabaseAuth() {
             setTokenVerified(false);
           } else {
             console.log("Supabase session verified successfully");
+            debugLog("Session user details:", {
+              id: data.session.user.id,
+              email: data.session.user.email,
+              role: data.session.user.role
+            });
             setCanVote(true);
             setTokenVerified(true);
           }
         } catch (e) {
           console.error("Error verifying Supabase session:", e);
+          console.error("DEBUG: Full error details:", e);
           setCanVote(false);
           setTokenVerified(false);
         }
       } else if (isMounted.current) {
+        debugLog("No token to verify session with", {
+          hasToken: !!authToken.current
+        });
         setCanVote(false);
         setTokenVerified(false);
       }
@@ -276,12 +360,19 @@ export function useSupabaseAuth() {
       }
       syncInProgress.current = false;
       GLOBAL_SYNC_IN_PROGRESS = false;
+      debugLog("Sync completed, state:", {
+        hasToken: !!authToken.current,
+        tokenVerified,
+        canVote,
+        supabaseUser: !!supabaseUser
+      });
     }
   }, [isSignedIn, user, getToken]);
 
   // Initial sync after mount and when auth state changes
   useEffect(() => {
     isMounted.current = true;
+    debugLog("Auth state changed - isSignedIn: " + isSignedIn);
     
     // Only perform sync if not already initialized or in progress
     if (!isInitialized.current && !syncInProgress.current && !GLOBAL_SYNC_IN_PROGRESS) {
@@ -301,6 +392,7 @@ export function useSupabaseAuth() {
     const refreshInterval = setInterval(() => {
       // Only refresh if not already in progress
       if (!syncInProgress.current && !GLOBAL_SYNC_IN_PROGRESS) {
+        debugLog("Periodic token refresh triggered");
         syncUserWithClerk(true); // Force refresh
       }
     }, 55 * 60 * 1000);
@@ -323,6 +415,11 @@ export function useSupabaseAuth() {
 
   // Get current auth token - moved outside of supabaseClient for direct access
   const getCurrentAuthToken = useCallback(() => {
+    if (authToken.current) {
+      debugLog("getCurrentAuthToken returning token");
+    } else {
+      debugLog("getCurrentAuthToken returning null token");
+    }
     return authToken.current;
   }, []);
 
@@ -330,8 +427,10 @@ export function useSupabaseAuth() {
   const supabaseClient = useCallback(() => {
     // Only create a new client if we have a token
     if (authToken.current) {
+      debugLog("supabaseClient using authenticated client");
       return getAuthClient(authToken.current);
     }
+    debugLog("supabaseClient using anonymous client (no token)");
     return supabase; // Use the anonymous client if no token is available
   }, []);
 

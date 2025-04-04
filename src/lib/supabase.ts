@@ -1,17 +1,59 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase';
 
+// Debug mode toggle - set to true to enable detailed logging
+const DEBUG_MODE = true;
+
+// Debug logger function that only logs when debug mode is enabled
+function debugLog(message: string, ...args: any[]) {
+  if (DEBUG_MODE) {
+    console.log(`DEBUG: ${message}`, ...args);
+  }
+}
+
 // Initialize the Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+debugLog("Supabase configuration:", {
+  hasUrl: !!supabaseUrl,
+  hasKey: !!supabaseKey,
+  urlLength: supabaseUrl?.length,
+  keyLength: supabaseKey?.length
+});
+
 // Create a single anonymous client instance
 export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+debugLog("Created anonymous Supabase client");
 
 // Store authenticated client
 let authClientInstance: ReturnType<typeof createClient<Database>> | null = null;
 // Track current token to avoid unnecessary updates
 let currentAuthToken: string | null = null;
+
+/**
+ * Debug function to safely log token information
+ */
+function logTokenInfo(token: string | null, prefix: string = "") {
+  if (!DEBUG_MODE) return;
+  
+  if (!token) {
+    console.log(`${prefix} Token is null or empty`);
+    return;
+  }
+  
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      console.log(`${prefix} Token doesn't have 3 parts (not a valid JWT)`);
+      return;
+    }
+    
+    console.log(`${prefix} Token length: ${token.length}, format: header.payload.signature`);
+  } catch (e) {
+    console.error(`${prefix} Error examining token:`, e);
+  }
+}
 
 /**
  * Get or create an authenticated Supabase client with the user's JWT token
@@ -22,11 +64,16 @@ let currentAuthToken: string | null = null;
 export function getAuthClient(authToken: string | null) {
   // If no token is provided or it's empty, return the anonymous client
   if (!authToken || authToken.trim() === '') {
+    debugLog("getAuthClient called with empty token, returning anonymous client");
     return supabase;
   }
 
+  // Log token info but not the actual token
+  logTokenInfo(authToken, "DEBUG: getAuthClient called with token:");
+
   // If the token hasn't changed and we already have a client, just return it
   if (authToken === currentAuthToken && authClientInstance) {
+    debugLog("Reusing existing authenticated client (token unchanged)");
     return authClientInstance;
   }
 
@@ -39,8 +86,15 @@ export function getAuthClient(authToken: string | null) {
       authClientInstance.auth.setSession({
         access_token: authToken,
         refresh_token: '',
+      }).then(() => {
+        debugLog("Successfully updated session on existing client");
       }).catch(error => {
         console.error('Error updating session:', error);
+        console.error('Details:', {
+          errorMessage: error?.message,
+          errorCode: error?.code,
+          errorStatus: error?.status
+        });
         // If updating fails, we'll recreate the client below
         authClientInstance = null;
       });
@@ -48,6 +102,7 @@ export function getAuthClient(authToken: string | null) {
       // If the client is still valid, update token and return it
       if (authClientInstance) {
         // Update the current token
+        debugLog("Updating current token reference");
         currentAuthToken = authToken;
         return authClientInstance;
       }
@@ -68,11 +123,16 @@ export function getAuthClient(authToken: string | null) {
     });
     
     // Store the current token
+    debugLog("Setting current token reference for new client");
     currentAuthToken = authToken;
     
     return authClientInstance;
   } catch (error) {
     console.error('Error managing Supabase client:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     
     // In case of errors, recreate the client as a fallback
     console.log('Recreating authenticated Supabase client after error');
@@ -91,10 +151,15 @@ export function getAuthClient(authToken: string | null) {
       
       // Store the current token
       currentAuthToken = authToken;
+      debugLog("Successfully created fallback client");
       
       return authClientInstance;
     } catch (innerError) {
       console.error('Failed to create client even as fallback, using anonymous client:', innerError);
+      console.error('Inner error details:', {
+        message: innerError instanceof Error ? innerError.message : String(innerError),
+        stack: innerError instanceof Error ? innerError.stack : undefined
+      });
       // If all else fails, use the anonymous client
       return supabase;
     }
@@ -137,6 +202,8 @@ export function createAuthClient(authToken: string) {
  * Call this function after a user signs in with Clerk.
  */
 export async function setSupabaseToken(token: string | null) {
+  debugLog("setSupabaseToken called");
+  
   // If the token hasn't changed, don't do anything
   if (token === currentAuthToken) {
     console.log('Token unchanged, skipping setSupabaseToken operation');
@@ -145,7 +212,8 @@ export async function setSupabaseToken(token: string | null) {
   
   if (token) {
     try {
-      console.log('Setting Supabase token:', token.substring(0, 10) + '...');
+      // Log token info but not the actual token for security
+      logTokenInfo(token, "DEBUG: Setting Supabase token:");
       
       // Add debugging to check token validity
       try {
@@ -166,13 +234,35 @@ export async function setSupabaseToken(token: string | null) {
       }
       
       // Set the authentication session for the anonymous client
-      await supabase.auth.setSession({
-        access_token: token,
-        refresh_token: '',
-      });
+      debugLog("Setting session on anonymous client");
+      try {
+        await supabase.auth.setSession({
+          access_token: token,
+          refresh_token: '',
+        });
+        debugLog("Session set successfully on anonymous client");
+      } catch (sessionError) {
+        console.error("Error setting session:", sessionError);
+        throw sessionError;
+      }
       
       // Update the client using getAuthClient to use the singleton pattern
-      getAuthClient(token);
+      debugLog("Getting auth client with new token");
+      const client = getAuthClient(token);
+      debugLog("Got auth client: " + !!client);
+      
+      // Verify the session was set correctly
+      try {
+        debugLog("Verifying session was set correctly");
+        const { data, error } = await client.auth.getSession();
+        if (error) {
+          console.error("DEBUG: Session verification failed:", error);
+        } else {
+          debugLog("Session verified, user: " + data.session?.user?.id);
+        }
+      } catch (verifyError) {
+        console.error("DEBUG: Error verifying session:", verifyError);
+      }
       
       console.log('Supabase token set successfully');
     } catch (error) {

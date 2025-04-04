@@ -7,7 +7,17 @@ import * as votesService from '@/services/votes';
 import * as commentsService from '@/services/comments';
 import * as suggestedRequestsService from '@/services/suggestedRequests';
 import * as usersService from '@/services/users';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+
+// Debug mode toggle - set to true to enable detailed logging
+const DEBUG_MODE = true;
+
+// Debug logger function that only logs when debug mode is enabled
+function debugLog(message: string, ...args: any[]) {
+  if (DEBUG_MODE) {
+    console.log(`DEBUG: ${message}`, ...args);
+  }
+}
 
 // ---------------------- Categories Queries ----------------------
 
@@ -101,7 +111,9 @@ export function useVoteStats(requestId: string) {
 
 export function useCastVote() {
   const queryClient = useQueryClient();
-  const { supabaseUser, tokenVerified, refreshAuth, getCurrentAuthToken } = useSupabaseAuth();
+  const { getToken } = useAuth();
+  const { user } = useUser();
+  const { supabaseUser } = useSupabaseAuth();
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
@@ -115,37 +127,45 @@ export function useCastVote() {
       value: string; 
       optionId?: string | null;
     }) => {
-      // If we don't have a verified token, try to refresh auth once
-      if (!tokenVerified && retryCount < MAX_RETRIES) {
-        console.log("Token not verified, attempting to refresh auth before voting (attempt", retryCount + 1, ")");
-        try {
-          await refreshAuth();
-          setRetryCount(count => count + 1);
-        } catch (refreshError) {
-          console.error("Failed to refresh auth before voting:", refreshError);
-          // Continue to attempt the vote anyway
-        }
-      }
+      // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
+      const userId = supabaseUser?.id || user?.id;
       
-      if (!supabaseUser?.id) {
-        console.error("Cannot cast vote: User not authenticated in Supabase");
+      if (!userId) {
         throw new Error('User not authenticated. Please sign in to vote.');
       }
       
-      // Get the current auth token at execution time
-      const currentAuthToken = getCurrentAuthToken();
+      // Get a fresh token directly from Clerk
+      debugLog("Getting fresh token for castVote");
+      let authToken: string | null = null;
       
-      if (!currentAuthToken) {
-        console.error("Cannot cast vote: Missing authentication token");
+      try {
+        authToken = await getToken({ template: 'supabase' });
+        
+        if (!authToken && retryCount < MAX_RETRIES) {
+          debugLog(`No token returned, retrying (${retryCount + 1}/${MAX_RETRIES})`);
+          setRetryCount(count => count + 1);
+          
+          // Wait a bit and try again
+          await new Promise(resolve => setTimeout(resolve, 500));
+          authToken = await getToken({ template: 'supabase' });
+        }
+      } catch (tokenError) {
+        console.error("Error getting token for voting:", tokenError);
+      }
+      
+      if (!authToken) {
         throw new Error('Authentication error. Please try signing out and in again.');
       }
       
       try {
-        const result = await votesService.castVote(supabaseUser.id, requestId, value, optionId, currentAuthToken);
+        debugLog(`Calling castVote with token: ${authToken ? 'present' : 'missing'}`);
+        const result = await votesService.castVote(userId, requestId, value, optionId, authToken);
+        
         // Reset retry count on success
         if (retryCount > 0) {
           setRetryCount(0);
         }
+        
         return result;
       } catch (error) {
         // Format user-friendly error message
@@ -165,10 +185,12 @@ export function useCastVote() {
       }
     },
     onSuccess: (_, variables) => {
+      const userId = supabaseUser?.id || user?.id;
+      
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', variables.requestId] });
       queryClient.invalidateQueries({ 
-        queryKey: ['votes', 'user', supabaseUser?.id, variables.requestId] 
+        queryKey: ['votes', 'user', userId, variables.requestId] 
       });
     },
     onError: (error) => {
@@ -179,39 +201,48 @@ export function useCastVote() {
 
 export function useRemoveVote() {
   const queryClient = useQueryClient();
-  const { supabaseUser, tokenVerified, refreshAuth, getCurrentAuthToken } = useSupabaseAuth();
+  const { getToken } = useAuth();
+  const { user } = useUser();
+  const { supabaseUser } = useSupabaseAuth();
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
   return useMutation({
     mutationFn: async ({ requestId }: { requestId: string }) => {
-      // If we don't have a verified token, try to refresh auth once
-      if (!tokenVerified && retryCount < MAX_RETRIES) {
-        console.log("Token not verified, attempting to refresh auth before removing vote (attempt", retryCount + 1, ")");
-        try {
-          await refreshAuth();
-          setRetryCount(count => count + 1);
-        } catch (refreshError) {
-          console.error("Failed to refresh auth before removing vote:", refreshError);
-          // Continue to attempt the vote removal anyway
-        }
-      }
+      // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
+      const userId = supabaseUser?.id || user?.id;
       
-      if (!supabaseUser?.id) {
-        console.error("Cannot remove vote: User not authenticated in Supabase");
+      if (!userId) {
         throw new Error('User not authenticated. Please sign in to remove your vote.');
       }
       
-      // Get the current auth token at execution time
-      const currentAuthToken = getCurrentAuthToken();
+      // Get a fresh token directly from Clerk
+      debugLog("Getting fresh token for removeVote");
+      let authToken: string | null = null;
       
-      if (!currentAuthToken) {
-        console.error("Cannot remove vote: Missing authentication token");
+      try {
+        authToken = await getToken({ template: 'supabase' });
+        
+        if (!authToken && retryCount < MAX_RETRIES) {
+          debugLog(`No token returned, retrying (${retryCount + 1}/${MAX_RETRIES})`);
+          setRetryCount(count => count + 1);
+          
+          // Wait a bit and try again
+          await new Promise(resolve => setTimeout(resolve, 500));
+          authToken = await getToken({ template: 'supabase' });
+        }
+      } catch (tokenError) {
+        console.error("Error getting token for removing vote:", tokenError);
+      }
+      
+      if (!authToken) {
         throw new Error('Authentication error. Please try signing out and in again.');
       }
       
       try {
-        await votesService.removeVote(supabaseUser.id, requestId, currentAuthToken);
+        debugLog(`Calling removeVote with token: ${authToken ? 'present' : 'missing'}`);
+        await votesService.removeVote(userId, requestId, authToken);
+        
         // Reset retry count on success
         if (retryCount > 0) {
           setRetryCount(0);
@@ -234,10 +265,12 @@ export function useRemoveVote() {
       }
     },
     onSuccess: (_, variables) => {
+      const userId = supabaseUser?.id || user?.id;
+      
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', variables.requestId] });
       queryClient.invalidateQueries({ 
-        queryKey: ['votes', 'user', supabaseUser?.id, variables.requestId] 
+        queryKey: ['votes', 'user', userId, variables.requestId] 
       });
     },
     onError: (error) => {
@@ -247,87 +280,123 @@ export function useRemoveVote() {
 }
 
 export function useUserVote(requestId: string) {
-  const { supabaseUser, refreshAuth, tokenVerified, getCurrentAuthToken } = useSupabaseAuth();
+  // We'll use Clerk's useAuth instead of the Supabase wrapper to get tokens directly
+  const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
+  const { supabaseUser } = useSupabaseAuth();
   const [lastErrorCount, setLastErrorCount] = useState(0);
-  const refreshAttempted = useRef(false);
+  const authAttemptsRef = useRef(0);
+  const maxAuthAttempts = 3;
   
   // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
   const effectiveUserId = supabaseUser?.id || user?.id;
 
+  // Log initial state for debugging
+  useEffect(() => {
+    debugLog("useUserVote hook initialized with:", {
+      requestId,
+      isSignedIn,
+      hasUser: !!user,
+      hasSupabaseUser: !!supabaseUser,
+      effectiveUserId: effectiveUserId ? `${effectiveUserId.substring(0, 8)}...` : 'none'
+    });
+  }, [requestId, user, supabaseUser, effectiveUserId, isSignedIn]);
+
   return useQuery({
-    queryKey: ['votes', 'user', effectiveUserId, requestId, tokenVerified],
+    queryKey: ['votes', 'user', effectiveUserId, requestId],
     queryFn: async () => {
-      if (!effectiveUserId) return null;
-      
-      // Get the current auth token at execution time, not at hook creation time
-      const currentAuthToken = getCurrentAuthToken();
-      
-      // For debugging
-      console.log('Fetching votes with: ', { 
-        effectiveUserId, 
-        clerkUserId: user?.id,
-        supabaseUserId: supabaseUser?.id,
-        requestId,
-        hasAuthToken: !!currentAuthToken,
-        tokenVerified
-      });
-      
-      // If we have a user but no auth token or unverified token, try to refresh auth once
-      if (effectiveUserId && (!currentAuthToken || !tokenVerified) && !refreshAttempted.current && lastErrorCount === 0) {
-        console.log("Auth token missing or unverified, attempting to refresh before fetching votes");
-        refreshAttempted.current = true;
-        try {
-          await refreshAuth();
-          // Get the fresh token after refresh
-          const refreshedToken = getCurrentAuthToken();
-          console.log("Auth refresh completed, token present:", !!refreshedToken);
-        } catch (e) {
-          console.error("Auth refresh failed:", e);
-        }
+      if (!effectiveUserId) {
+        debugLog("useUserVote - No user ID available");
+        return null;
       }
       
+      if (!user) {
+        debugLog("useUserVote - No Clerk user available");
+        return null;
+      }
+      
+      // For debugging
+      debugLog('Starting vote query for:', { 
+        requestId,
+        userId: effectiveUserId ? `${effectiveUserId.substring(0, 8)}...` : 'undefined',
+        authAttempts: authAttemptsRef.current
+      });
+      
+      // Try to get a fresh token directly from Clerk
+      let currentAuthToken: string | null = null;
+      
       try {
-        // Always get the most current token
-        const tokenToUse = getCurrentAuthToken();
-        const result = await votesService.getUserVote(effectiveUserId, requestId, tokenToUse);
+        debugLog("Getting fresh token from Clerk");
+        const tokenStartTime = Date.now();
+        currentAuthToken = await getToken({ template: "supabase" });
+        const tokenTime = Date.now() - tokenStartTime;
         
-        // Reset error count on success
-        if (lastErrorCount > 0) {
+        if (currentAuthToken) {
+          debugLog(`Successfully obtained token from Clerk in ${tokenTime}ms`);
+        } else {
+          debugLog(`No token returned from Clerk getToken after ${tokenTime}ms`);
+          
+          // If we're already at max attempts, just proceed without a token
+          if (authAttemptsRef.current >= maxAuthAttempts) {
+            debugLog(`Max auth attempts (${maxAuthAttempts}) reached, proceeding without token`);
+          } 
+          // Otherwise increment counter and try again after a delay
+          else if (authAttemptsRef.current < maxAuthAttempts) {
+            authAttemptsRef.current++;
+            
+            // Artificial delay to avoid rapid retries
+            const delayMs = 500;
+            debugLog(`Waiting ${delayMs}ms before retry`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            
+            // Try once more to get a token
+            debugLog(`Retry attempt ${authAttemptsRef.current}/${maxAuthAttempts} for token`);
+            const retryStartTime = Date.now();
+            currentAuthToken = await getToken({ template: "supabase" });
+            const retryTime = Date.now() - retryStartTime;
+            
+            if (currentAuthToken) {
+              debugLog(`Successfully obtained token on retry in ${retryTime}ms`);
+            } else {
+              debugLog(`Still no token after retry (${retryTime}ms)`);
+            }
+          }
+        }
+      } catch (tokenError) {
+        console.error("Error getting Clerk token:", tokenError);
+        debugLog("Token error details:", tokenError instanceof Error ? tokenError.message : String(tokenError));
+        authAttemptsRef.current++;
+      }
+      
+      // Execute the query with whatever token we have (or null)
+      try {
+        debugLog(`Executing vote query with token: ${currentAuthToken ? 'present' : 'missing'}`);
+        const queryStartTime = Date.now();
+        const result = await votesService.getUserVote(effectiveUserId, requestId, currentAuthToken);
+        const queryTime = Date.now() - queryStartTime;
+        
+        debugLog(`Vote query completed in ${queryTime}ms with result: ${result ? 'found vote' : 'no vote'}`);
+        
+        // Reset error count and auth attempts on success
+        if (lastErrorCount > 0 || authAttemptsRef.current > 0) {
           setLastErrorCount(0);
+          authAttemptsRef.current = 0;
         }
         return result;
       } catch (error) {
         console.error("Error fetching user vote:", error);
+        debugLog("Query error details:", error instanceof Error ? error.message : String(error));
         
         // Increment error count to prevent infinite refresh loops
         setLastErrorCount(prev => prev + 1);
-        
-        // For certain errors, try to refresh auth only if we haven't already tried
-        if (lastErrorCount < 2 && !refreshAttempted.current && error instanceof Error && 
-           (error.message.includes('auth') || error.message.includes('JWT') || error.message.includes('token'))) {
-          console.log("Auth-related error detected, attempting to refresh auth");
-          refreshAttempted.current = true;
-          try {
-            await refreshAuth();
-            // Try once more with the fresh token
-            const freshToken = getCurrentAuthToken();
-            if (freshToken) {
-              return votesService.getUserVote(effectiveUserId, requestId, freshToken);
-            }
-          } catch (e) {
-            console.error("Auth refresh failed:", e);
-          }
-        }
         
         // Return null instead of throwing to prevent UI breakage
         return null;
       }
     },
-    enabled: !!effectiveUserId && !!requestId,
-    retry: false, // Disable automatic retries
-    retryOnMount: false, // Don't retry on component mount
-    staleTime: 30000, // Cache results for 30 seconds
+    enabled: !!requestId && !!effectiveUserId && !!user,
+    staleTime: 30 * 1000, // 30 seconds
+    retry: false // Disable automatic retries, we handle them manually
   });
 }
 
