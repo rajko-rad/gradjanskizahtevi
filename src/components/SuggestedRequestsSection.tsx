@@ -22,15 +22,15 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
   };
 
   return (
-    <div className="mt-8 border-t pt-6 border-serbia-blue/10">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-medium text-serbia-blue">Predloženi zahtevi</h3>
+    <div className="mt-6 pt-2">
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-sm font-medium text-gray-600">Predlozi građana</h3>
         
         <Dialog open={showForm} onOpenChange={setShowForm}>
           <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1">
-              <Plus className="h-4 w-4" />
-              <span>Predloži zahtev</span>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-gray-600">
+              <Plus className="h-3.5 w-3.5" />
+              <span>Dodaj predlog</span>
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -43,7 +43,7 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
       </div>
       
       {requests.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="border rounded-md bg-white">
           {requests.map((request) => (
             <SuggestedRequestCard
               key={request.id}
@@ -57,12 +57,12 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
           ))}
         </div>
       ) : (
-        <div className="text-center py-6 bg-gray-50 rounded-md">
-          <p className="text-gray-500">Još uvek nema predloženih zahteva za ovu kategoriju.</p>
+        <div className="text-center py-3 bg-gray-50 rounded-md">
+          <p className="text-xs text-gray-500">Još uvek nema predloženih zahteva.</p>
           <Button 
             variant="link" 
             onClick={() => setShowForm(true)}
-            className="mt-2"
+            className="mt-1 text-xs h-auto p-0"
           >
             Budite prvi koji će predložiti zahtev
           </Button>

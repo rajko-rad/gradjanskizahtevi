@@ -1,9 +1,10 @@
 
 import React from "react";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ThumbsUp, User, Clock } from "lucide-react";
+import { ThumbsUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 interface SuggestedRequestCardProps {
   id: string;
@@ -47,33 +48,37 @@ export function SuggestedRequestCard({
   };
 
   return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="text-lg">{title}</CardTitle>
-        <CardDescription className="flex items-center text-sm gap-1 mt-1">
-          <User className="h-3.5 w-3.5" />
-          <span>{author}</span>
-          <span className="mx-1">•</span>
-          <Clock className="h-3.5 w-3.5" />
-          <span>{timestamp}</span>
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-gray-600">{description}</p>
-      </CardContent>
-      <CardFooter className="flex justify-between items-center">
-        <div className="flex items-center gap-1 text-sm">
-          <ThumbsUp className="h-4 w-4" />
-          <span>{voteCount} glasova</span>
+    <HoverCard>
+      <HoverCardTrigger asChild>
+        <div className="flex items-center justify-between py-2 px-3 rounded hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+          <div className="truncate mr-4">
+            <span className="font-medium">{title}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 text-sm whitespace-nowrap">
+              <ThumbsUp className="h-3.5 w-3.5" />
+              <span>{voteCount}</span>
+            </div>
+            <Button 
+              variant={hasVoted ? "outline" : "default"} 
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={handleVote}
+            >
+              {hasVoted ? "Povučeno" : "Podrži"}
+            </Button>
+          </div>
         </div>
-        <Button 
-          variant={hasVoted ? "outline" : "default"} 
-          size="sm"
-          onClick={handleVote}
-        >
-          {hasVoted ? "Povuci glas" : "Podrži"}
-        </Button>
-      </CardFooter>
-    </Card>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-80 p-4">
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold">{title}</h4>
+          <p className="text-xs text-gray-600">{description}</p>
+          <div className="text-xs text-gray-500 pt-1">
+            Predloženo: {timestamp}
+          </div>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
