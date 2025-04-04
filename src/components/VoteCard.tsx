@@ -7,7 +7,8 @@ import {
   ThumbsDown, 
   MessageSquare,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  CheckCircle2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -53,49 +54,58 @@ export function VoteCard({
             <Button
               onClick={() => handleVote("yes")}
               className={cn(
-                "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200",
+                "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all",
                 selectedOption === "yes" && "bg-green-100 border-green-300"
               )}
               variant="outline"
             >
               <ThumbsUp className="mr-2 h-4 w-4" />
               Da {votes["yes"] ? `(${votes["yes"]})` : ""}
+              {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-4 w-4 text-green-600" />}
             </Button>
             <Button
               onClick={() => handleVote("no")}
               className={cn(
-                "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200",
+                "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all",
                 selectedOption === "no" && "bg-red-100 border-red-300"
               )}
               variant="outline"
             >
               <ThumbsDown className="mr-2 h-4 w-4" />
               Ne {votes["no"] ? `(${votes["no"]})` : ""}
+              {selectedOption === "no" && <CheckCircle2 className="ml-2 h-4 w-4 text-red-600" />}
             </Button>
           </div>
         );
       case "multiple":
         return (
-          <div className="flex flex-col gap-3 mt-4">
+          <div className="flex flex-col gap-3 mt-6">
             {options.map((option, index) => (
               <Button
                 key={index}
                 onClick={() => handleVote(option)}
                 className={cn(
-                  "justify-start text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border",
+                  "justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all",
                   selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
                 )}
                 variant="outline"
               >
-                {option} {votes[option] ? `(${votes[option]})` : ""}
+                <span>{option}</span>
+                <span className="flex items-center">
+                  {votes[option] ? 
+                    <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+                      {votes[option]}
+                    </span> : null}
+                  {selectedOption === option && <CheckCircle2 className="ml-2 h-4 w-4 text-blue-600" />}
+                </span>
               </Button>
             ))}
           </div>
         );
       case "range":
         return (
-          <div className="mt-4">
-            <div className="mb-2 flex justify-between text-xs text-gray-500">
+          <div className="mt-6">
+            <div className="mb-3 flex justify-between text-xs text-gray-500">
               <span>{min} meseci</span>
               <span>{max} meseci</span>
             </div>
@@ -105,14 +115,16 @@ export function VoteCard({
               max={max}
               value={rangeValue}
               onChange={(e) => setRangeValue(parseInt(e.target.value))}
-              className="w-full"
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-serbia-blue"
             />
-            <div className="mt-2 text-center">
-              <span className="text-sm font-medium">{rangeValue} meseci</span>
+            <div className="mt-3 text-center">
+              <span className="text-sm font-medium bg-serbia-blue/10 text-serbia-blue px-3 py-1 rounded-full">
+                {rangeValue} meseci
+              </span>
             </div>
             <Button 
               onClick={() => handleVote(rangeValue.toString())}
-              className="w-full mt-4"
+              className="w-full mt-6 bg-serbia-blue hover:bg-serbia-blue/90"
               variant="default"
             >
               Glasaj
@@ -123,19 +135,19 @@ export function VoteCard({
   };
 
   return (
-    <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg font-bold">{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+    <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all overflow-hidden">
+      <CardHeader className="pb-2 border-b bg-gray-50">
+        <CardTitle className="text-lg font-bold text-serbia-blue">{title}</CardTitle>
+        {description && <CardDescription className="mt-1">{description}</CardDescription>}
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-6">
         {renderVoteOptions()}
         
         {hasComments && (
-          <div className="mt-4 pt-4 border-t">
+          <div className="mt-6 pt-4 border-t">
             <Button 
               variant="ghost" 
-              className="w-full flex items-center justify-center text-gray-500"
+              className="w-full flex items-center justify-center text-gray-600 hover:text-serbia-blue hover:bg-serbia-blue/5"
               onClick={() => setShowComments(!showComments)}
             >
               <MessageSquare className="h-4 w-4 mr-2" />
@@ -147,8 +159,8 @@ export function VoteCard({
             </Button>
             
             {showComments && (
-              <div className="mt-4">
-                <p className="text-sm text-gray-500 text-center">
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600 text-center">
                   Prijavite se da biste komentarisali
                 </p>
               </div>
