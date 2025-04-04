@@ -13,7 +13,7 @@ export const categories = [
   {
     id: "elections",
     title: "Izborni uslovi",
-    shortTitle: "Izbori",
+    shortTitle: "Izborni Uslovi",
     description: "Zahtevi za unapređenje i čišćenje biračkih spiskova",
     count: 1,
     resources: [
