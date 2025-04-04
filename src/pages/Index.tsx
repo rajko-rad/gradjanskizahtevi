@@ -4,6 +4,7 @@ import { Footer } from "@/components/Footer";
 import { VoteCard } from "@/components/VoteCard";
 import { categories, requests, mockComments } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
+import { SuggestedRequestsSection } from "@/components/SuggestedRequestsSection";
 import { 
   ArrowRight, 
   FileText,
@@ -126,6 +127,9 @@ const Index = () => {
                     </div>
                   ))}
                 </div>
+                
+                {/* Suggested Requests Section */}
+                <SuggestedRequestsSection categoryId={category.id} />
               </div>
             );
           })}

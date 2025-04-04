@@ -159,6 +159,40 @@ export const requests = [
   }
 ];
 
+// New suggested requests data
+export const suggestedRequests = [
+  {
+    id: "media-censorship",
+    categoryId: "media",
+    title: "Ukidanje medijske cenzure",
+    description: "Predlog za ukidanje svih vidova cenzure u medijima i garantovanje slobode izražavanja",
+    author: "Ana Milić",
+    timestamp: "Pre 3 dana",
+    status: "pending", // pending, approved, rejected
+    votes: 87
+  },
+  {
+    id: "electoral-commission",
+    categoryId: "elections",
+    title: "Reforma izborne komisije",
+    description: "Predlog za reformu sastava i rada Republičke izborne komisije",
+    author: "Milan Petrović",
+    timestamp: "Pre 5 dana",
+    status: "pending",
+    votes: 64
+  },
+  {
+    id: "judiciary-independence",
+    categoryId: "judiciary",
+    title: "Nezavisnost sudija",
+    description: "Predlog za osiguravanje pune nezavisnosti sudija i sudstva od političkog uticaja",
+    author: "Jelena Nikolić",
+    timestamp: "Pre 2 dana",
+    status: "pending",
+    votes: 104
+  }
+];
+
 export const mockComments = [
   {
     id: "comment1",
