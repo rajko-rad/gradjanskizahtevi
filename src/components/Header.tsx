@@ -6,14 +6,6 @@ import { Menu, X, User, LogIn } from "lucide-react";
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const topics = [
-    { name: "Mediji", href: "#mediji" },
-    { name: "Izborni uslovi", href: "#izborni-uslovi" },
-    { name: "Službe bezbednosti", href: "#sluzbe-bezbednosti" },
-    { name: "Pravosuđe", href: "#pravosudje" },
-    { name: "Prelazna vlada", href: "#prelazna-vlada" }
-  ];
-
   return (
     <header className="fixed top-0 left-0 right-0 bg-white z-50 shadow-sm">
       <div className="container flex items-center justify-between h-20 px-4 md:px-6">
@@ -39,16 +31,10 @@ export function Header() {
         </div>
 
         {/* Desktop menu */}
-        <nav className="hidden md:flex items-center gap-4 overflow-x-auto">
-          {topics.map((topic) => (
-            <a 
-              key={topic.name}
-              href={topic.href} 
-              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors whitespace-nowrap"
-            >
-              {topic.name}
-            </a>
-          ))}
+        <nav className="hidden md:flex items-center gap-8">
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">O platformi</a>
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">Zahtevi</a>
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">Diskusije</a>
           
           <div className="flex items-center gap-3 ml-4">
             <Button variant="outline" className="border-serbia-blue text-serbia-blue hover:bg-serbia-blue/10">
@@ -66,16 +52,10 @@ export function Header() {
       {/* Mobile menu dropdown */}
       {isMenuOpen && (
         <div className="bg-white shadow-md md:hidden">
-          <div className="px-4 py-6 space-y-4">
-            {topics.map((topic) => (
-              <a 
-                key={topic.name}
-                href={topic.href} 
-                className="block text-sm font-medium text-gray-600 hover:text-serbia-blue py-2"
-              >
-                {topic.name}
-              </a>
-            ))}
+          <div className="px-4 py-6 space-y-6">
+            <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">O platformi</a>
+            <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">Zahtevi</a>
+            <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">Diskusije</a>
             
             <div className="flex flex-col gap-3 pt-2">
               <Button variant="outline" className="w-full border-serbia-blue text-serbia-blue hover:bg-serbia-blue/10">
