@@ -1,16 +1,12 @@
 
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import { CategoryCard } from "@/components/CategoryCard";
 import { VoteCard } from "@/components/VoteCard";
 import { CommentSystem } from "@/components/CommentSystem";
 import { categories, requests, mockComments } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
-import { ChevronRight } from "lucide-react";
 
 const Index = () => {
-  const featuredRequests = requests.slice(0, 3);
-
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -37,57 +33,39 @@ const Index = () => {
         </div>
       </section>
       
-      {/* Categories Section */}
-      <section className="py-12 bg-gray-50">
-        <div className="container px-4 md:px-6">
-          <div className="flex flex-col items-center">
-            <h2 className="text-2xl font-bold tracking-tight mb-2">Kategorije zahteva</h2>
-            <p className="text-gray-500 text-center mb-8 max-w-[600px]">
-              Pregledajte kategorije i diskutujte o najvažnijim temama
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
-              {categories.map((category) => (
-                <CategoryCard 
-                  key={category.id}
-                  id={category.id}
-                  title={category.title}
-                  description={category.description}
-                  count={category.count}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-      
-      {/* Featured Requests Section */}
+      {/* Requests Grouped by Categories */}
       <section className="py-12">
         <div className="container px-4 md:px-6">
-          <div className="flex flex-col items-center">
-            <h2 className="text-2xl font-bold tracking-tight mb-2">Aktuelni zahtevi</h2>
-            <p className="text-gray-500 text-center mb-8 max-w-[600px]">
-              Glasajte o trenutno najaktivnijim zahtevima
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
-              {featuredRequests.map((request) => (
-                <VoteCard 
-                  key={request.id}
-                  title={request.title}
-                  description={request.description}
-                  type={request.type as "yesno" | "multiple" | "range"}
-                  options={request.options}
-                  initialVotes={request.initialVotes}
-                  hasComments={request.hasComments}
-                />
-              ))}
-            </div>
-            <div className="mt-8">
-              <Button variant="outline" className="group">
-                Pogledaj sve zahteve
-                <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-              </Button>
-            </div>
-          </div>
+          {categories.map((category) => {
+            const categoryRequests = requests.filter(req => req.categoryId === category.id);
+            
+            if (categoryRequests.length === 0) return null;
+            
+            return (
+              <div key={category.id} className="mb-16">
+                <div className="border-b pb-2 mb-6">
+                  <h2 className="text-2xl font-bold">{category.title}</h2>
+                  <p className="text-gray-500 mt-1">{category.description}</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {categoryRequests.map((request) => (
+                    <VoteCard 
+                      key={request.id}
+                      title={request.title}
+                      description={request.description}
+                      type={request.type as "yesno" | "multiple" | "range"}
+                      options={request.options}
+                      min={request.min}
+                      max={request.max}
+                      initialVotes={request.initialVotes}
+                      hasComments={request.hasComments}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
       
