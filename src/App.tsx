@@ -7,14 +7,25 @@ import { SignIn, SignUp, UserProfile } from "@clerk/clerk-react";
 import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import { useMemo } from "react";
 
-const queryClient = new QueryClient();
+// Create a more persistent QueryClient to avoid recreation
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 30000,
+    },
+  },
+});
 
 // Create a wrapper component that uses the hook
 const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
-  // Call the hook to sync Clerk auth with Supabase
-  useSupabaseAuth();
-  return <>{children}</>;
+  // Call the hook once to sync Clerk auth with Supabase
+  const auth = useSupabaseAuth();
+  
+  // Use useMemo to prevent unnecessary re-renders of children
+  return useMemo(() => <>{children}</>, [children]);
 };
 
 const App = () => (

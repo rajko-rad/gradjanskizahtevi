@@ -10,6 +10,8 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 // Store authenticated client
 let authClientInstance: ReturnType<typeof createClient<Database>> | null = null;
+// Track current token to avoid unnecessary updates
+let currentAuthToken: string | null = null;
 
 /**
  * Get or create an authenticated Supabase client with the user's JWT token
@@ -23,60 +25,84 @@ export function getAuthClient(authToken: string | null) {
     return supabase;
   }
 
-  // Create a new auth client only if it doesn't exist yet
-  if (!authClientInstance) {
-    authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        }
-      }
-    });
-    console.log('Created new authenticated Supabase client');
+  // If the token hasn't changed and we already have a client, just return it
+  if (authToken === currentAuthToken && authClientInstance) {
     return authClientInstance;
-  } 
-  
-  // For existing clients, use the auth.setSession method instead of recreating the client
-  // This avoids the "Multiple GoTrueClient instances" warning
-  try {
-    // Set the auth header for subsequent requests
-    authClientInstance.auth.setSession({
-      access_token: authToken,
-      refresh_token: '',
-    });
-    console.log('Updated existing authenticated Supabase client with new token');
-  } catch (error) {
-    console.error('Error updating auth token on existing client:', error);
-    // If updating fails, recreate the client as a fallback
-    authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        }
-      }
-    });
-    console.log('Recreated authenticated Supabase client after error');
   }
 
-  return authClientInstance;
+  try {
+    // If we have an existing client, update its session instead of creating a new one
+    if (authClientInstance) {
+      console.log('Updating existing authenticated Supabase client with new token');
+      
+      // Set the auth header for subsequent requests
+      authClientInstance.auth.setSession({
+        access_token: authToken,
+        refresh_token: '',
+      });
+      
+      // Update the current token
+      currentAuthToken = authToken;
+      
+      return authClientInstance;
+    } else {
+      // Create a new auth client if it doesn't exist yet
+      console.log('Creating new authenticated Supabase client');
+      authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        }
+      });
+      
+      // Store the current token
+      currentAuthToken = authToken;
+      
+      return authClientInstance;
+    }
+  } catch (error) {
+    console.error('Error managing Supabase client:', error);
+    
+    // In case of errors, recreate the client as a fallback
+    console.log('Recreating authenticated Supabase client after error');
+    authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      }
+    });
+    
+    // Store the current token
+    currentAuthToken = authToken;
+    
+    return authClientInstance;
+  }
 }
 
 /**
  * Clear the authenticated client (useful for logout)
  */
 export function clearAuthClient() {
-  authClientInstance = null;
-  console.log('Cleared authenticated Supabase client');
+  if (authClientInstance) {
+    // Don't create new instances if already null
+    console.log('Clearing authenticated Supabase client');
+    authClientInstance = null;
+    currentAuthToken = null;
+  }
 }
 
 export default supabase;
 
 /**
  * Create an authenticated Supabase client with the user's JWT token
+ * @deprecated Use getAuthClient instead to prevent multiple instances
  * @param authToken - The JWT token from Clerk
  * @returns Authenticated Supabase client
  */
 export function createAuthClient(authToken: string) {
+  console.warn('Deprecated: createAuthClient called. Use getAuthClient instead to prevent multiple instances');
   return createClient<Database>(supabaseUrl, supabaseKey, {
     global: {
       headers: {
@@ -91,6 +117,12 @@ export function createAuthClient(authToken: string) {
  * Call this function after a user signs in with Clerk.
  */
 export async function setSupabaseToken(token: string | null) {
+  // If the token hasn't changed, don't do anything
+  if (token === currentAuthToken) {
+    console.log('Token unchanged, skipping setSupabaseToken operation');
+    return;
+  }
+  
   if (token) {
     try {
       console.log('Setting Supabase token:', token.substring(0, 10) + '...');
@@ -119,15 +151,13 @@ export async function setSupabaseToken(token: string | null) {
         refresh_token: '',
       });
       
-      // Clear any existing authenticated client to ensure we create a fresh one
-      // This prevents stale auth state
-      if (authClientInstance) {
-        clearAuthClient();
-      }
+      // Update the client using getAuthClient to use the singleton pattern
+      getAuthClient(token);
       
       console.log('Supabase token set successfully');
     } catch (error) {
       console.error('Error setting Supabase token:', error);
+      clearAuthClient();
       throw error;
     }
   } else {

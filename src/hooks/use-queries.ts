@@ -7,7 +7,7 @@ import * as votesService from '@/services/votes';
 import * as commentsService from '@/services/comments';
 import * as suggestedRequestsService from '@/services/suggestedRequests';
 import * as usersService from '@/services/users';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 // ---------------------- Categories Queries ----------------------
 
@@ -244,6 +244,7 @@ export function useUserVote(requestId: string) {
   const { supabaseUser, authToken, refreshAuth, tokenVerified } = useSupabaseAuth();
   const { user } = useUser();
   const [lastErrorCount, setLastErrorCount] = useState(0);
+  const refreshAttempted = useRef(false);
   
   // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
   const effectiveUserId = supabaseUser?.id || user?.id;
@@ -264,8 +265,9 @@ export function useUserVote(requestId: string) {
       });
       
       // If we have a user but no auth token or unverified token, try to refresh auth once
-      if (effectiveUserId && (!authToken || !tokenVerified) && lastErrorCount === 0) {
+      if (effectiveUserId && (!authToken || !tokenVerified) && !refreshAttempted.current && lastErrorCount === 0) {
         console.log("Auth token missing or unverified, attempting to refresh before fetching votes");
+        refreshAttempted.current = true;
         try {
           await refreshAuth();
           // Continue with the fetch even if refresh didn't work, we'll fall back to anonymous views
@@ -287,10 +289,11 @@ export function useUserVote(requestId: string) {
         // Increment error count to prevent infinite refresh loops
         setLastErrorCount(prev => prev + 1);
         
-        // For certain errors, try to refresh auth
-        if (lastErrorCount < 2 && error instanceof Error && 
+        // For certain errors, try to refresh auth only if we haven't already tried
+        if (lastErrorCount < 2 && !refreshAttempted.current && error instanceof Error && 
            (error.message.includes('auth') || error.message.includes('JWT') || error.message.includes('token'))) {
           console.log("Auth-related error detected, attempting to refresh auth");
+          refreshAttempted.current = true;
           try {
             await refreshAuth();
           } catch (e) {

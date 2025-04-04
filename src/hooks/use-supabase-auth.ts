@@ -7,6 +7,8 @@ import { supabase, getAuthClient, clearAuthClient, setSupabaseToken } from '@/li
 const MIN_SYNC_INTERVAL = 5000;
 // Maximum retries for token acquisition
 const MAX_TOKEN_RETRIES = 3;
+// Global flag to prevent multiple hook instances from syncing simultaneously
+let GLOBAL_SYNC_IN_PROGRESS = false;
 
 /**
  * Hook to handle authentication between Clerk and Supabase
@@ -30,10 +32,12 @@ export function useSupabaseAuth() {
   const isInitialized = useRef(false);
   // Track retry attempts
   const retryAttempts = useRef(0);
+  // Track if the component is mounted
+  const isMounted = useRef(true);
 
   const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
-    // Skip if already syncing
-    if (syncInProgress.current) {
+    // Skip if already syncing (either in this hook instance or globally)
+    if (syncInProgress.current || GLOBAL_SYNC_IN_PROGRESS) {
       console.log('Sync already in progress, skipping');
       return;
     }
@@ -46,7 +50,10 @@ export function useSupabaseAuth() {
     }
 
     try {
+      // Set both local and global sync flags
       syncInProgress.current = true;
+      GLOBAL_SYNC_IN_PROGRESS = true;
+      
       setIsLoading(true);
       
       // Handle sign out case
@@ -55,16 +62,18 @@ export function useSupabaseAuth() {
         setCanVote(false);
         setSupabaseUser(null);
         setTokenVerified(false);
-        setIsLoading(false);
+        
         if (authToken.current) {
           // Clear supabase session if we had one
           await setSupabaseToken(null);
           authToken.current = null;
         }
-        clearAuthClient();
+        
+        // Update state and flags
         lastSyncTime.current = now;
         isInitialized.current = true;
         retryAttempts.current = 0;
+        setIsLoading(false);
         return;
       }
 
@@ -89,7 +98,12 @@ export function useSupabaseAuth() {
               
               if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
                 console.log(`Token validation failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
-                setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
+                // Set a timeout to retry but reset sync flags first
+                syncInProgress.current = false;
+                GLOBAL_SYNC_IN_PROGRESS = false;
+                if (isMounted.current) {
+                  setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
+                }
                 return;
               } else {
                 console.error("Max token retry attempts reached, giving up");
@@ -100,10 +114,15 @@ export function useSupabaseAuth() {
               // Reset retry counter on success
               retryAttempts.current = 0;
               
-              // Set the token in Supabase session
-              await setSupabaseToken(token);
-              authToken.current = token;
-              setTokenVerified(true);
+              try {
+                // Set the token in Supabase session
+                await setSupabaseToken(token);
+                authToken.current = token;
+                setTokenVerified(true);
+              } catch (tokenSetError) {
+                console.error("Error setting Supabase token:", tokenSetError);
+                // Continue with user sync even if token setting fails
+              }
             }
           } else {
             console.warn("No JWT token returned from Clerk");
@@ -118,12 +137,19 @@ export function useSupabaseAuth() {
             
             if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
               console.log(`Token retrieval failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
-              setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
+              // Set a timeout to retry but reset sync flags first
+              syncInProgress.current = false;
+              GLOBAL_SYNC_IN_PROGRESS = false;
+              if (isMounted.current) {
+                setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
+              }
               return;
             } else {
               console.error("Max token retry attempts reached, giving up");
-              await setSupabaseToken(null);
-              authToken.current = null;
+              if (authToken.current) {
+                await setSupabaseToken(null);
+                authToken.current = null;
+              }
               setTokenVerified(false);
               setCanVote(false);
             }
@@ -137,12 +163,19 @@ export function useSupabaseAuth() {
           
           if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
             console.log(`Token error, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
-            setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
+            // Set a timeout to retry but reset sync flags first
+            syncInProgress.current = false;
+            GLOBAL_SYNC_IN_PROGRESS = false;
+            if (isMounted.current) {
+              setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
+            }
             return;
           } else {
             console.error("Max token retry attempts reached, giving up");
-            await setSupabaseToken(null);
-            authToken.current = null;
+            if (authToken.current) {
+              await setSupabaseToken(null);
+              authToken.current = null;
+            }
             setTokenVerified(false);
             setCanVote(false);
           }
@@ -150,34 +183,36 @@ export function useSupabaseAuth() {
       }
 
       // Sync user data with Supabase regardless of JWT status
-      const primaryEmail = user.primaryEmailAddress?.emailAddress;
-      
-      if (!primaryEmail) {
-        throw new Error("No primary email found for user");
-      }
-
-      console.log("Syncing user data with Supabase");
-      try {
-        const syncedUser = await syncUserWithSupabase(
-          user.id,
-          primaryEmail,
-          user.fullName,
-          user.imageUrl
-        );
+      if (user) {
+        const primaryEmail = user.primaryEmailAddress?.emailAddress;
         
-        if (syncedUser) {
-          console.log("Successfully synced user with Supabase:", syncedUser);
-          setSupabaseUser(syncedUser);
+        if (!primaryEmail) {
+          console.warn("No primary email found for user");
         } else {
-          console.warn("User sync returned no data");
+          console.log("Syncing user data with Supabase");
+          try {
+            const syncedUser = await syncUserWithSupabase(
+              user.id,
+              primaryEmail,
+              user.fullName,
+              user.imageUrl
+            );
+            
+            if (syncedUser && isMounted.current) {
+              console.log("Successfully synced user with Supabase:", syncedUser);
+              setSupabaseUser(syncedUser);
+            } else {
+              console.warn("User sync returned no data");
+            }
+          } catch (syncError) {
+            console.error("Error syncing user data:", syncError);
+            // Continue with auth verification even if sync fails
+          }
         }
-      } catch (syncError) {
-        console.error("Error syncing user data:", syncError);
-        // Continue with auth verification even if sync fails
       }
       
       // Verify Supabase session if we have a token
-      if (authToken.current) {
+      if (authToken.current && isMounted.current) {
         try {
           const client = getAuthClient(authToken.current);
           const { data, error } = await client.auth.getSession();
@@ -186,11 +221,22 @@ export function useSupabaseAuth() {
             console.warn("Supabase session verification failed:", error?.message);
             
             // If verification fails with a specific token, try to refresh it
-            if (error?.message.includes("JWT") || error?.message.includes("token")) {
+            if (error?.message?.includes("JWT") || error?.message?.includes("token")) {
               console.log("JWT validation error detected, attempting to refresh token");
-              authToken.current = null; // Force token refresh on next sync
-              setTimeout(() => syncUserWithClerk(true), 100);
-              return;
+              // Clear existing token to force refresh
+              authToken.current = null;
+              
+              // Only schedule a refresh if we haven't exceeded retry limits
+              if (retryAttempts.current < MAX_TOKEN_RETRIES) {
+                retryAttempts.current += 1;
+                // Reset sync flags before scheduling a retry
+                syncInProgress.current = false;
+                GLOBAL_SYNC_IN_PROGRESS = false;
+                if (isMounted.current) {
+                  setTimeout(() => syncUserWithClerk(true), 1000);
+                  return;
+                }
+              }
             }
             
             setCanVote(false);
@@ -205,7 +251,7 @@ export function useSupabaseAuth() {
           setCanVote(false);
           setTokenVerified(false);
         }
-      } else {
+      } else if (isMounted.current) {
         setCanVote(false);
         setTokenVerified(false);
       }
@@ -219,21 +265,33 @@ export function useSupabaseAuth() {
       if (e instanceof Error) {
         console.error("Error details:", e.message, e.stack);
       }
-      setError(e as Error);
-      setCanVote(false);
-      setTokenVerified(false);
+      if (isMounted.current) {
+        setError(e as Error);
+        setCanVote(false);
+        setTokenVerified(false);
+      }
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) {
+        setIsLoading(false);
+      }
       syncInProgress.current = false;
+      GLOBAL_SYNC_IN_PROGRESS = false;
     }
   }, [isSignedIn, user, getToken]);
 
   // Initial sync after mount and when auth state changes
   useEffect(() => {
-    if (!isInitialized.current || !syncInProgress.current) {
+    isMounted.current = true;
+    
+    // Only perform sync if not already initialized or in progress
+    if (!isInitialized.current && !syncInProgress.current && !GLOBAL_SYNC_IN_PROGRESS) {
       syncUserWithClerk(true); // Force refresh on first load
     }
-  }, [isSignedIn, user, syncUserWithClerk]);
+    
+    return () => {
+      isMounted.current = false;
+    };
+  }, [isSignedIn, syncUserWithClerk]);
 
   // Add periodic token refresher when user is signed in
   useEffect(() => {
@@ -241,7 +299,10 @@ export function useSupabaseAuth() {
     
     // Refresh the token every 55 minutes (before the 1-hour expiry)
     const refreshInterval = setInterval(() => {
-      syncUserWithClerk(true); // Force refresh
+      // Only refresh if not already in progress
+      if (!syncInProgress.current && !GLOBAL_SYNC_IN_PROGRESS) {
+        syncUserWithClerk(true); // Force refresh
+      }
     }, 55 * 60 * 1000);
     
     return () => clearInterval(refreshInterval);
@@ -250,12 +311,18 @@ export function useSupabaseAuth() {
   // Function to manually refresh auth if needed
   const refreshAuth = useCallback(() => {
     console.log("Manual auth refresh requested");
+    // Only refresh if not already in progress
+    if (syncInProgress.current || GLOBAL_SYNC_IN_PROGRESS) {
+      console.log("Sync already in progress, skipping manual refresh");
+      return Promise.resolve(); // Return a resolved promise
+    }
+    
     retryAttempts.current = 0; // Reset retry counter for manual refresh
     return syncUserWithClerk(true);
   }, [syncUserWithClerk]);
 
-  // Get appropriate client based on auth state
-  const getClient = useCallback(() => {
+  // Memoized client provider to prevent unnecessary renders
+  const supabaseClient = useCallback(() => {
     return getAuthClient(authToken.current);
   }, []);
 
@@ -265,7 +332,7 @@ export function useSupabaseAuth() {
     canVote,
     tokenVerified,
     // Return appropriate client based on auth state
-    supabase: getClient(),
+    supabase: supabaseClient(),
     error,
     refreshAuth,
     authToken: authToken.current
