@@ -17,46 +17,28 @@ function debugLog(message: string, ...args: any[]) {
 const MIN_SYNC_INTERVAL = 5000;
 // Maximum retries for token acquisition
 const MAX_TOKEN_RETRIES = 3;
+// Token refresh threshold in milliseconds (50 minutes)
+const TOKEN_REFRESH_THRESHOLD = 50 * 60 * 1000;
 // Global flag to prevent multiple hook instances from syncing simultaneously
 let GLOBAL_SYNC_IN_PROGRESS = false;
 
 /**
- * Debugging function to safely log JWT information
+ * Token cache to reduce redundant token fetching
+ * This is separate from the hook to persist across hook instances
  */
-function logJwtDebug(token: string | null) {
-  if (!DEBUG_MODE) return;
-  
-  if (!token) {
-    console.log("DEBUG: Token is null or empty");
-    return;
-  }
-  
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      console.log("DEBUG: Invalid JWT format - doesn't have 3 parts");
-      return;
-    }
-    
-    // Decode the payload (middle part)
-    const payloadBase64 = parts[1];
-    const payload = JSON.parse(atob(payloadBase64));
-    
-    // Log important JWT claims without revealing the whole token
-    console.log("DEBUG: JWT token details:", {
-      sub: payload.sub,
-      aud: payload.aud,
-      role: payload.role,
-      exp: new Date(payload.exp * 1000).toISOString(),
-      iat: payload.iat ? new Date(payload.iat * 1000).toISOString() : undefined,
-      jti: payload.jti ? payload.jti.substring(0, 6) + '...' : undefined,
-      length: token.length,
-      format: 'header.payload.signature'
-    });
-  } catch (e) {
-    console.error("DEBUG: Error parsing JWT:", e);
-  }
-}
+const tokenCache = {
+  token: null as string | null,
+  timestamp: 0,
+  isValid: () => {
+    // Token is valid if it exists and was fetched less than TOKEN_REFRESH_THRESHOLD ago
+    return !!tokenCache.token && (Date.now() - tokenCache.timestamp < TOKEN_REFRESH_THRESHOLD);
+  },
+  set: (token: string | null) => {
+    tokenCache.token = token;
+    tokenCache.timestamp = token ? Date.now() : 0;
+    debugLog(token ? `Token cached (length: ${token.length})` : 'Token cache cleared');
+  },
+};
 
 // Update token handling to use clerk-supabase methods
 const setSupabaseToken = async (token: string | null) => {
@@ -65,8 +47,12 @@ const setSupabaseToken = async (token: string | null) => {
   // If the token is null, we're clearing the auth state
   if (!token) {
     debugLog("Clearing token (user signed out)");
+    tokenCache.set(null);
     return;
   }
+  
+  // Cache the token
+  tokenCache.set(token);
   
   // Just log token info, the token will be used directly by getSupabaseClient
   logTokenInfo(token);
@@ -76,7 +62,8 @@ const setSupabaseToken = async (token: string | null) => {
  * Hook to handle authentication between Clerk and Supabase
  */
 export function useSupabaseAuth() {
-  const { isSignedIn, user } = useUser();
+  const { isSignedIn } = useUser();
+  const { user } = useUser();
   const { getToken } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -96,6 +83,36 @@ export function useSupabaseAuth() {
   const retryAttempts = useRef(0);
   // Track if the component is mounted
   const isMounted = useRef(true);
+
+  // Get a fresh token with priority given to token cache
+  const getFreshToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
+    // If we have a valid cached token and aren't forcing a refresh, use it
+    if (!forceRefresh && tokenCache.isValid()) {
+      debugLog("Using cached token");
+      return tokenCache.token;
+    }
+    
+    try {
+      debugLog("Getting fresh token from Clerk");
+      const token = await getToken({ template: 'supabase' });
+      
+      if (token) {
+        debugLog("Successfully obtained token from Clerk in", Date.now() - lastSyncTime.current, "ms");
+        tokenCache.set(token);
+        
+        // Also update our local reference
+        authToken.current = token;
+        
+        return token;
+      } 
+      
+      debugLog("No token returned from Clerk");
+      return null;
+    } catch (error) {
+      console.error("Error getting token:", error);
+      return null;
+    }
+  }, [getToken]);
 
   const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
     debugLog(`syncUserWithClerk called with forceRefresh = ${forceRefresh}`);
@@ -124,6 +141,7 @@ export function useSupabaseAuth() {
       // Set both local and global sync flags
       syncInProgress.current = true;
       GLOBAL_SYNC_IN_PROGRESS = true;
+      lastSyncTime.current = now;
       
       setIsLoading(true);
       
@@ -141,7 +159,6 @@ export function useSupabaseAuth() {
         }
         
         // Update state and flags
-        lastSyncTime.current = now;
         isInitialized.current = true;
         retryAttempts.current = 0;
         setIsLoading(false);
@@ -152,96 +169,14 @@ export function useSupabaseAuth() {
       
       // Get JWT token from Clerk only if needed or forced
       if (forceRefresh || !authToken.current) {
-        try {
-          console.log("Getting Supabase JWT from Clerk...");
-          debugLog("Clerk user state:", {
-            id: user.id,
-            primaryEmail: user.primaryEmailAddress?.emailAddress,
-            isSignedIn
-          });
-          
-          const token = await getToken({ template: "supabase" });
-          
-          if (token) {
-            console.log("Successfully obtained Supabase JWT from Clerk");
-            logTokenInfo(token);
-            
-            // Validate token format before using it
-            const tokenParts = token.split('.');
-            if (tokenParts.length !== 3) {
-              console.error("Invalid JWT token format - token should have 3 parts");
-              
-              // Increment retry attempts
-              retryAttempts.current += 1;
-              
-              if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
-                console.log(`Token validation failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
-                // Set a timeout to retry but reset sync flags first
-                syncInProgress.current = false;
-                GLOBAL_SYNC_IN_PROGRESS = false;
-                if (isMounted.current) {
-                  setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
-                }
-                return;
-              } else {
-                console.error("Max token retry attempts reached, giving up");
-                setTokenVerified(false);
-                setCanVote(false);
-              }
-            } else {
-              // Reset retry counter on success
-              retryAttempts.current = 0;
-              
-              try {
-                // Save the token for later use with getSupabaseClient
-                await setSupabaseToken(token);
-                authToken.current = token;
-                debugLog("Token saved to authToken.current");
-                setTokenVerified(true);
-              } catch (tokenSetError) {
-                console.error("Error setting token:", tokenSetError);
-                // Continue with user sync even if token setting fails
-              }
-            }
-          } else {
-            console.warn("No JWT token returned from Clerk");
-            console.log("Clerk user state:", {
-              id: user.id,
-              primaryEmail: user.primaryEmailAddress?.emailAddress,
-              isSignedIn
-            });
-            
-            // Increment retry counter
-            retryAttempts.current += 1;
-            
-            if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
-              console.log(`Token retrieval failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
-              // Set a timeout to retry but reset sync flags first
-              syncInProgress.current = false;
-              GLOBAL_SYNC_IN_PROGRESS = false;
-              if (isMounted.current) {
-                setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
-              }
-              return;
-            } else {
-              console.error("Max token retry attempts reached, giving up");
-              if (authToken.current) {
-                await setSupabaseToken(null);
-                authToken.current = null;
-              }
-              setTokenVerified(false);
-              setCanVote(false);
-            }
-          }
-        } catch (e) {
-          console.error("Error getting Supabase JWT from Clerk:", e);
-          console.error("Error details:", e instanceof Error ? e.message : String(e));
-          
+        const token = await getFreshToken(forceRefresh);
+        
+        if (!token) {
           // Increment retry counter
           retryAttempts.current += 1;
           
           if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
-            console.log(`Token error, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
+            console.log(`Token retrieval failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
             // Set a timeout to retry but reset sync flags first
             syncInProgress.current = false;
             GLOBAL_SYNC_IN_PROGRESS = false;
@@ -258,6 +193,11 @@ export function useSupabaseAuth() {
             setTokenVerified(false);
             setCanVote(false);
           }
+        } else {
+          // Reset retry counter on success
+          retryAttempts.current = 0;
+          authToken.current = token;
+          setTokenVerified(true);
         }
       }
 
@@ -274,7 +214,8 @@ export function useSupabaseAuth() {
               user.id,
               primaryEmail,
               user.fullName,
-              user.imageUrl
+              user.imageUrl,
+              authToken.current
             );
             
             if (syncedUser && isMounted.current) {
@@ -297,51 +238,43 @@ export function useSupabaseAuth() {
           const client = getSupabaseClient(authToken.current);
           debugLog("Got authenticated client");
           
-          const { data, error } = await client.auth.getSession();
-          debugLog("getSession result:", { 
+          // Simple test query to verify RLS works
+          const { data, error } = await client.from('jwt_test').select('*').limit(1);
+          
+          debugLog("JWT test result:", { 
             success: !error,
-            hasSession: !!data?.session,
+            hasData: !!data,
             errorCode: error?.code,
             errorMessage: error?.message
           });
           
-          if (error || !data.session) {
-            console.warn("Supabase session verification failed:", error?.message);
+          if (error) {
+            console.warn("JWT verification failed:", error?.message);
             
-            // If verification fails with a specific token, try to refresh it
-            if (error?.message?.includes("JWT") || error?.message?.includes("token")) {
-              console.log("JWT validation error detected, attempting to refresh token");
-              // Clear existing token to force refresh
-              authToken.current = null;
+            // Token verification failed, flag token as invalid
+            setTokenVerified(false);
+            setCanVote(false);
+            
+            // Try refreshing token if we haven't exceeded retry limits
+            if (retryAttempts.current < MAX_TOKEN_RETRIES) {
+              retryAttempts.current += 1;
               
-              // Only schedule a refresh if we haven't exceeded retry limits
-              if (retryAttempts.current < MAX_TOKEN_RETRIES) {
-                retryAttempts.current += 1;
-                // Reset sync flags before scheduling a retry
-                syncInProgress.current = false;
-                GLOBAL_SYNC_IN_PROGRESS = false;
-                if (isMounted.current) {
-                  setTimeout(() => syncUserWithClerk(true), 1000);
-                  return;
-                }
+              // Force a token refresh
+              const freshToken = await getFreshToken(true);
+              
+              if (freshToken) {
+                authToken.current = freshToken;
+                setTokenVerified(true);
+                setCanVote(true);
               }
             }
-            
-            setCanVote(false);
-            setTokenVerified(false);
           } else {
-            console.log("Supabase session verified successfully");
-            debugLog("Session user details:", {
-              id: data.session.user.id,
-              email: data.session.user.email,
-              role: data.session.user.role
-            });
+            console.log("JWT verification succeeded");
             setCanVote(true);
             setTokenVerified(true);
           }
         } catch (e) {
-          console.error("Error verifying Supabase session:", e);
-          console.error("DEBUG: Full error details:", e);
+          console.error("Error verifying JWT:", e);
           setCanVote(false);
           setTokenVerified(false);
         }
@@ -353,15 +286,11 @@ export function useSupabaseAuth() {
         setTokenVerified(false);
       }
       
-      // Update last sync time
-      lastSyncTime.current = now;
+      // Update initialization state
       isInitialized.current = true;
       
     } catch (e) {
       console.error("Error in Clerk-Supabase auth sync:", e);
-      if (e instanceof Error) {
-        console.error("Error details:", e.message, e.stack);
-      }
       if (isMounted.current) {
         setError(e as Error);
         setCanVote(false);
@@ -380,7 +309,7 @@ export function useSupabaseAuth() {
         supabaseUser: !!supabaseUser
       });
     }
-  }, [isSignedIn, user, getToken]);
+  }, [isSignedIn, user, getFreshToken]);
 
   // Initial sync after mount and when auth state changes
   useEffect(() => {
@@ -397,22 +326,6 @@ export function useSupabaseAuth() {
     };
   }, [isSignedIn, syncUserWithClerk]);
 
-  // Add periodic token refresher when user is signed in
-  useEffect(() => {
-    if (!isSignedIn) return;
-    
-    // Refresh the token every 55 minutes (before the 1-hour expiry)
-    const refreshInterval = setInterval(() => {
-      // Only refresh if not already in progress
-      if (!syncInProgress.current && !GLOBAL_SYNC_IN_PROGRESS) {
-        debugLog("Periodic token refresh triggered");
-        syncUserWithClerk(true); // Force refresh
-      }
-    }, 55 * 60 * 1000);
-    
-    return () => clearInterval(refreshInterval);
-  }, [isSignedIn, syncUserWithClerk]);
-
   // Function to manually refresh auth if needed
   const refreshAuth = useCallback(async () => {
     console.log("Manual auth refresh requested");
@@ -426,23 +339,34 @@ export function useSupabaseAuth() {
     return syncUserWithClerk(true);
   }, [syncUserWithClerk]);
 
-  // Get current auth token - moved outside of supabaseClient for direct access
-  const getCurrentAuthToken = useCallback(() => {
-    if (authToken.current) {
-      debugLog("getCurrentAuthToken returning token");
-    } else {
-      debugLog("getCurrentAuthToken returning null token");
+  // Get current auth token
+  const getCurrentAuthToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
+    if (forceRefresh || !authToken.current) {
+      const token = await getFreshToken(forceRefresh);
+      if (token) {
+        authToken.current = token;
+      }
     }
+    
+    debugLog("getCurrentAuthToken returning", authToken.current ? "token" : "null");
     return authToken.current;
-  }, []);
+  }, [getFreshToken]);
 
-  // Memoized client provider to prevent unnecessary renders
+  // Memoized client provider to avoid recreating clients on each render
   const supabaseClient = useCallback(() => {
     // Only create a new client if we have a token
     if (authToken.current) {
       debugLog("supabaseClient using authenticated client");
       return getSupabaseClient(authToken.current);
     }
+    
+    // If we might have a token in the cache but not in our ref, check it
+    if (tokenCache.isValid()) {
+      debugLog("supabaseClient using cached token client");
+      authToken.current = tokenCache.token;
+      return getSupabaseClient(tokenCache.token);
+    }
+    
     debugLog("supabaseClient using anonymous client (no token)");
     return anonClient; // Use the anonymous client if no token is available
   }, []);
@@ -457,6 +381,6 @@ export function useSupabaseAuth() {
     error,
     refreshAuth,
     authToken: authToken.current,
-    getCurrentAuthToken // Expose a method to get the current token
+    getCurrentAuthToken
   };
 } 
