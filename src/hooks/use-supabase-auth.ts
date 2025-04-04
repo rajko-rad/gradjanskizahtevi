@@ -2,6 +2,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { syncUserWithSupabase, type User } from '@/services/users';
 import { getSupabaseClient, anonClient, logTokenInfo } from '@/lib/clerk-supabase';
+import clerkSupabase from '@/lib/clerk-supabase';
+
+// Use the imported functions from the default export
+const { isTokenExpired, refreshToken } = clerkSupabase;
 
 // Debug mode toggle - set to true to enable detailed logging
 const DEBUG_MODE = true;
@@ -33,7 +37,10 @@ const tokenCache = {
   timestamp: 0,
   isValid: () => {
     // Token is valid if it exists and was fetched less than TOKEN_REFRESH_THRESHOLD ago
-    return !!tokenCache.token && (Date.now() - tokenCache.timestamp < TOKEN_REFRESH_THRESHOLD);
+    // Also check the token itself using isTokenExpired to catch short-lived tokens
+    return !!tokenCache.token && 
+      (Date.now() - tokenCache.timestamp < TOKEN_REFRESH_THRESHOLD) &&
+      !isTokenExpired(tokenCache.token);
   },
   set: (token: string | null) => {
     tokenCache.token = token;
@@ -84,8 +91,11 @@ function tryLoadCachedToken() {
     // Check if token is expired
     const now = Date.now();
     if (timestamp && expiry && now < expiry) {
-      debugLog("Loaded cached token from localStorage");
-      return token;
+      // Also verify the token itself isn't expired
+      if (token && !isTokenExpired(token)) {
+        debugLog("Loaded cached token from localStorage");
+        return token;
+      }
     }
     
     // Remove expired token
@@ -140,7 +150,12 @@ export function useSupabaseAuth() {
     
     try {
       debugLog("Getting fresh token from Clerk");
-      const token = await getToken({ template: 'supabase' });
+      
+      // Use our new refreshToken utility that manages concurrent refreshes
+      const token = await refreshToken(
+        () => getToken({ template: 'supabase' }),
+        authToken.current
+      );
       
       if (token) {
         debugLog("Successfully obtained token from Clerk in", Date.now() - lastSyncTime.current, "ms");
@@ -213,6 +228,8 @@ export function useSupabaseAuth() {
         setCanVote(false);
         setSupabaseUser(null);
         setTokenVerified(false);
+        setIsSyncedWithSupabase(false);
+        USER_SYNCED_WITH_SUPABASE = false;
         
         if (authToken.current) {
           // Clear supabase session if we had one
@@ -235,7 +252,8 @@ export function useSupabaseAuth() {
       console.log("Syncing Clerk user with Supabase...");
       
       // Get JWT token from Clerk only if needed or forced
-      if (forceRefresh || !authToken.current) {
+      // Also check for token expiration
+      if (forceRefresh || !authToken.current || (authToken.current && isTokenExpired(authToken.current))) {
         const token = await getFreshToken(forceRefresh);
         
         if (!token) {
@@ -277,7 +295,7 @@ export function useSupabaseAuth() {
         
         if (!primaryEmail) {
           console.warn("No primary email found for user");
-        } else {
+        } else if (!isSyncedWithSupabase) {
           console.log("Syncing user data with Supabase");
           try {
             const syncedUser = await syncUserWithSupabase(
@@ -300,6 +318,8 @@ export function useSupabaseAuth() {
             console.error("Error syncing user data:", syncError);
             // Continue with auth verification even if sync fails
           }
+        } else {
+          debugLog("User already synced, skipping sync operation");
         }
       }
       
@@ -308,6 +328,31 @@ export function useSupabaseAuth() {
       
       // Verify Supabase session if we have a token
       if (authToken.current && isMounted.current) {
+        // First check if token is expired before even trying to use it
+        if (isTokenExpired(authToken.current)) {
+          debugLog("Auth token is expired, refreshing before verification");
+          authToken.current = await getFreshToken(true);
+          
+          if (!authToken.current) {
+            debugLog("Failed to refresh token, cannot verify session");
+            setCanVote(false);
+            setTokenVerified(false);
+            
+            // Update initialization state
+            isInitialized.current = true;
+            
+            // Reset sync flags
+            syncInProgress.current = false;
+            GLOBAL_SYNC_IN_PROGRESS = false;
+            
+            if (isMounted.current) {
+              setIsLoading(false);
+            }
+            
+            return;
+          }
+        }
+        
         try {
           debugLog("Verifying Supabase session with token...");
           const client = getSupabaseClient(authToken.current);
@@ -326,22 +371,23 @@ export function useSupabaseAuth() {
           if (error) {
             console.warn("JWT verification failed:", error?.message);
             
-            // Token verification failed, flag token as invalid
-            setTokenVerified(false);
-            setCanVote(false);
-            
-            // Try refreshing token if we haven't exceeded retry limits
-            if (retryAttempts.current < MAX_TOKEN_RETRIES) {
-              retryAttempts.current += 1;
-              
-              // Force a token refresh
+            // Check if the error is due to an expired token
+            if (error.message?.includes('JWT expired')) {
+              debugLog("JWT expired, forcing token refresh");
               const freshToken = await getFreshToken(true);
               
               if (freshToken) {
                 authToken.current = freshToken;
                 setTokenVerified(true);
                 setCanVote(true);
+              } else {
+                setTokenVerified(false);
+                setCanVote(false);
               }
+            } else {
+              // Token verification failed for other reasons
+              setTokenVerified(false);
+              setCanVote(false);
             }
           } else {
             console.log("JWT verification succeeded");
@@ -381,10 +427,11 @@ export function useSupabaseAuth() {
         hasToken: !!authToken.current,
         tokenVerified,
         canVote,
-        supabaseUser: !!supabaseUser
+        supabaseUser: !!supabaseUser,
+        isSyncedWithSupabase
       });
     }
-  }, [isSignedIn, user, getFreshToken]);
+  }, [isSignedIn, user, getFreshToken, isSyncedWithSupabase]);
 
   // Initial sync after mount and when auth state changes
   useEffect(() => {
@@ -396,10 +443,23 @@ export function useSupabaseAuth() {
       syncUserWithClerk(true); // Force refresh on first load
     }
     
+    // Setup token refresh interval
+    const tokenCheckInterval = setInterval(() => {
+      if (authToken.current && isTokenExpired(authToken.current)) {
+        debugLog("Token expired during interval check, triggering refresh");
+        getFreshToken(true).then(newToken => {
+          if (newToken && isMounted.current) {
+            debugLog("Token refreshed successfully via interval");
+          }
+        });
+      }
+    }, 30000); // Check every 30 seconds
+    
     return () => {
       isMounted.current = false;
+      clearInterval(tokenCheckInterval);
     };
-  }, [isSignedIn, syncUserWithClerk]);
+  }, [isSignedIn, syncUserWithClerk, getFreshToken]);
 
   // Function to manually refresh auth if needed
   const refreshAuth = useCallback(async () => {
@@ -416,6 +476,12 @@ export function useSupabaseAuth() {
 
   // Get current auth token
   const getCurrentAuthToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
+    // Check if current token is expired
+    if (authToken.current && isTokenExpired(authToken.current)) {
+      debugLog("Current token is expired, forcing refresh");
+      forceRefresh = true; 
+    }
+    
     if (forceRefresh || !authToken.current) {
       const token = await getFreshToken(forceRefresh);
       if (token) {
@@ -431,6 +497,15 @@ export function useSupabaseAuth() {
   const supabaseClient = useCallback(() => {
     // Only create a new client if we have a token
     if (authToken.current) {
+      // Check if token is expired
+      if (isTokenExpired(authToken.current)) {
+        // Token is expired, but we'll use the anonymous client immediately
+        // and trigger a refresh in the background
+        debugLog("Auth token expired in supabaseClient, triggering background refresh");
+        getCurrentAuthToken(true).catch(e => console.error("Error refreshing expired token:", e));
+        return anonClient;
+      }
+      
       debugLog("supabaseClient using authenticated client");
       return getSupabaseClient(authToken.current);
     }
@@ -444,7 +519,7 @@ export function useSupabaseAuth() {
     
     debugLog("supabaseClient using anonymous client (no token)");
     return anonClient; // Use the anonymous client if no token is available
-  }, []);
+  }, [getCurrentAuthToken]);
 
   return {
     isLoading,

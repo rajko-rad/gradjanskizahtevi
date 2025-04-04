@@ -12,6 +12,17 @@ let lastAnonLogTime = 0;
 // Minimum gap between anonymous client logs (in ms)
 const MIN_ANON_LOG_INTERVAL = 5000; // Increase to 5 seconds to reduce console spam
 
+// Max token cache age in milliseconds (3 minutes)
+// Clerk tokens are valid for 5 minutes, so refresh before that
+const MAX_TOKEN_AGE = 3 * 60 * 1000;
+
+// Track ongoing token refreshes to prevent concurrent refreshes
+let tokenRefreshPromise: Promise<string | null> | null = null;
+let lastRefreshTime = 0;
+
+// Track JWT expiry times to proactively refresh
+const tokenExpiryTimes = new Map<string, number>();
+
 // Throttled log function for high-frequency operations
 const throttledLogs = new Map<string, number>();
 function throttledDebugLog(key: string, message: string, ...args: any[]) {
@@ -53,6 +64,50 @@ export const anonClient = createClient<Database>(supabaseUrl, supabaseKey);
 const authClientCache = new Map<string, ReturnType<typeof createClient<Database>>>();
 
 /**
+ * Extract expiry time from JWT token
+ */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    
+    const payload = JSON.parse(atob(parts[1]));
+    if (!payload.exp) return null;
+    
+    return payload.exp * 1000; // Convert to milliseconds
+  } catch (error) {
+    debugLog('Error extracting token expiry:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if a token is expired or about to expire soon
+ * Returns true if token is within 30 seconds of expiration or already expired
+ */
+function isTokenExpired(token: string): boolean {
+  const expiry = tokenExpiryTimes.get(token) || getTokenExpiry(token);
+  if (!expiry) return true; // No expiry time found, assume expired
+  
+  // Cache expiry time
+  tokenExpiryTimes.set(token, expiry);
+  
+  // Consider token expired if it's within 30 seconds of expiration
+  const now = Date.now();
+  const hasExpired = now > (expiry - 30000); // 30 second buffer
+  
+  if (hasExpired) {
+    debugLog('Token expired or about to expire', {
+      expiresAt: new Date(expiry).toISOString(),
+      now: new Date().toISOString(),
+      timeLeft: (expiry - now) / 1000 + ' seconds'
+    });
+  }
+  
+  return hasExpired;
+}
+
+/**
  * Create a new Supabase client with the provided JWT token from Clerk
  * This approach creates a fresh client for each request to avoid stale tokens
  * and bypasses Supabase Auth's session management
@@ -63,6 +118,13 @@ const authClientCache = new Map<string, ReturnType<typeof createClient<Database>
 export function createAuthClient(token: string | null | undefined) {
   if (!token) {
     debugLog('No token provided, returning anonymous client');
+    return anonClient;
+  }
+
+  // Check if token is expired
+  if (isTokenExpired(token)) {
+    debugLog('Token is expired, returning anonymous client and triggering refresh');
+    // Event to trigger token refresh would go here in a more complex implementation
     return anonClient;
   }
 
@@ -130,12 +192,18 @@ export function logTokenInfo(token: string | null | undefined) {
     }
     
     const payload = JSON.parse(atob(parts[1]));
+    const expiry = payload.exp ? new Date(payload.exp * 1000) : null;
+    const now = new Date();
+    const timeToExpiry = expiry ? (expiry.getTime() - now.getTime()) / 1000 : 'unknown';
+    
     debugLog('Token info:', {
       length: token.length,
       sub: payload.sub ? `${payload.sub.substring(0, 8)}...` : 'missing',
       role: payload.role || 'missing',
       aud: payload.aud || 'missing',
-      exp: payload.exp ? new Date(payload.exp * 1000).toISOString() : 'missing',
+      exp: expiry ? expiry.toISOString() : 'missing',
+      timeToExpiry: timeToExpiry + ' seconds',
+      isValid: typeof timeToExpiry === 'number' && timeToExpiry > 0 ? 'valid' : 'EXPIRED'
     });
   } catch (error) {
     debugLog('Error examining token:', error);
@@ -162,8 +230,70 @@ export function getSupabaseClient(token?: string | null) {
     return anonClient;
   }
   
+  // Check if token is about to expire or has expired
+  if (isTokenExpired(token)) {
+    throttledDebugLog('expired-token', 'Token expired, using anonymous client');
+    return anonClient;
+  }
+  
   debugLog('supabaseClient using authenticated client');
   return createAuthClient(token);
+}
+
+/**
+ * Set up a refresh handler for the token
+ * This should be called by the app when a token refresh is needed
+ * 
+ * @param refreshFn Function that returns a fresh token promise
+ * @param currentToken Current token that needs refreshing
+ * @returns Promise resolving to the new token
+ */
+export async function refreshToken(
+  refreshFn: () => Promise<string | null>,
+  currentToken: string | null
+): Promise<string | null> {
+  // If there's already a refresh in progress, return that promise
+  if (tokenRefreshPromise) {
+    debugLog('Token refresh already in progress, reusing promise');
+    return tokenRefreshPromise;
+  }
+  
+  // Don't refresh too frequently (at most once per 10 seconds)
+  const now = Date.now();
+  if (now - lastRefreshTime < 10000) {
+    debugLog('Token refresh throttled, last refresh was too recent');
+    return currentToken;
+  }
+  
+  lastRefreshTime = now;
+  
+  debugLog('Starting token refresh');
+  tokenRefreshPromise = (async () => {
+    try {
+      const newToken = await refreshFn();
+      if (newToken) {
+        debugLog('Token refreshed successfully');
+        // If we have the old token in cache, remove it
+        if (currentToken) {
+          const oldKey = `${currentToken.substring(0, 8)}...${currentToken.substring(currentToken.length - 8)}`;
+          if (authClientCache.has(oldKey)) {
+            authClientCache.delete(oldKey);
+          }
+        }
+        return newToken;
+      } else {
+        debugLog('Token refresh failed, no new token returned');
+        return null;
+      }
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      return null;
+    } finally {
+      tokenRefreshPromise = null;
+    }
+  })();
+  
+  return tokenRefreshPromise;
 }
 
 /**
@@ -172,6 +302,16 @@ export function getSupabaseClient(token?: string | null) {
  */
 export async function testJwtToken(token: string) {
   try {
+    // Check if token is expired before even trying
+    if (isTokenExpired(token)) {
+      debugLog('Token is expired, JWT test will fail');
+      return { 
+        success: false, 
+        error: { message: 'Token expired' },
+        tokenInfo: { expired: true }
+      };
+    }
+    
     const client = getSupabaseClient(token);
     
     // Try to query the jwt_test view we created
@@ -198,5 +338,7 @@ export default {
   createAuthClient,
   getSupabaseClient,
   logTokenInfo,
-  testJwtToken
+  testJwtToken,
+  refreshToken,
+  isTokenExpired
 }; 

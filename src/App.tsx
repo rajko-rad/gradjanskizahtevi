@@ -7,12 +7,13 @@ import { SignIn, SignUp, UserProfile, useAuth, useUser } from "@clerk/clerk-reac
 import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 import { syncUserWithSupabase } from "@/services/users";
 import { getSupabaseClient, logTokenInfo } from "@/lib/clerk-supabase"; 
+import clerkSupabase from "@/lib/clerk-supabase";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { useEffect, useMemo, useState, useRef, useCallback, createContext, useContext } from "react";
 
 // Debug mode toggle
-const DEBUG_MODE = true;
+const DEBUG_MODE = process.env.NODE_ENV === 'development';
 
 // Debug logger function
 function debugLog(message: string, ...args: any[]) {
@@ -43,6 +44,7 @@ const queryClient = new QueryClient({
 // Constants for auth handling
 const MAX_SYNC_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 500;
+const TOKEN_REFRESH_INTERVAL = 60 * 1000; // 1 minute
 
 // Create a context for auth state
 type AuthContextType = {
@@ -75,15 +77,27 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const retryAttempts = useRef(0);
   const isMounted = useRef(true);
   const cachedTokenRef = useRef<string | null>(null);
+  const tokenRefreshTimerRef = useRef<number | null>(null);
   
   // Call the hook once to sync Clerk auth with Supabase
   const auth = useSupabaseAuth();
   
   // Function to get and cache a token
-  const getAndCacheToken = useCallback(async (): Promise<string | null> => {
+  const getAndCacheToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
+    // If we have a valid cached token and aren't forcing a refresh, use it
+    if (!forceRefresh && cachedTokenRef.current && !clerkSupabase.isTokenExpired(cachedTokenRef.current)) {
+      debugLog("Using cached token");
+      return cachedTokenRef.current;
+    }
+    
     try {
       debugLog("Getting fresh token from Clerk");
-      const token = await getToken({ template: 'supabase' });
+      
+      // Use our improved refreshToken utility
+      const token = await clerkSupabase.refreshToken(
+        () => getToken({ template: 'supabase' }),
+        cachedTokenRef.current
+      );
       
       if (!token) {
         debugLog("No token returned from Clerk");
@@ -103,6 +117,31 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
       return null;
     }
   }, [getToken]);
+  
+  // Schedule regular token refreshes to avoid expiration problems
+  const setupTokenRefreshTimer = useCallback(() => {
+    // Clear any existing timer
+    if (tokenRefreshTimerRef.current) {
+      clearInterval(tokenRefreshTimerRef.current);
+      tokenRefreshTimerRef.current = null;
+    }
+    
+    // Only set up refresh timer if signed in
+    if (isSignedIn) {
+      debugLog("Setting up token refresh timer");
+      tokenRefreshTimerRef.current = window.setInterval(() => {
+        const currentToken = cachedTokenRef.current;
+        
+        // Check if token is expired or will expire soon
+        if (currentToken && clerkSupabase.isTokenExpired(currentToken)) {
+          debugLog("Token expiring soon, refreshing");
+          getAndCacheToken(true).catch(error => {
+            console.error("Error in scheduled token refresh:", error);
+          });
+        }
+      }, TOKEN_REFRESH_INTERVAL);
+    }
+  }, [isSignedIn, getAndCacheToken]);
   
   // Function to sync user with exponential backoff
   const syncUserWithBackoff = useCallback(async () => {
@@ -128,10 +167,12 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Get token with retry logic
       let token = cachedTokenRef.current;
-      if (!token) {
+      
+      // Check if token is valid or needs refresh
+      if (!token || clerkSupabase.isTokenExpired(token)) {
         // Try to get a fresh token with exponential backoff
         for (let attempt = 0; attempt < MAX_SYNC_RETRIES; attempt++) {
-          token = await getAndCacheToken();
+          token = await getAndCacheToken(true); // Force refresh
           
           if (token) break;
           
@@ -205,11 +246,22 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       
       // User is signed in, sync with Supabase
-      const syncedUser = await syncUserWithBackoff();
-      
-      if (isMounted.current) {
-        setInitialSyncDone(true);
-        setIsInitializing(false);
+      try {
+        const syncedUser = await syncUserWithBackoff();
+        
+        // Set up token refresh timer after initial sync
+        setupTokenRefreshTimer();
+        
+        if (isMounted.current) {
+          setInitialSyncDone(true);
+          setIsInitializing(false);
+        }
+      } catch (error) {
+        console.error("Error in initial auth sync:", error);
+        if (isMounted.current) {
+          setInitialSyncDone(true);
+          setIsInitializing(false);
+        }
       }
     };
     
@@ -217,13 +269,17 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     return () => {
       isMounted.current = false;
+      if (tokenRefreshTimerRef.current) {
+        clearInterval(tokenRefreshTimerRef.current);
+        tokenRefreshTimerRef.current = null;
+      }
     };
-  }, [isSignedIn, isUserLoaded, syncUserWithBackoff]);
+  }, [isSignedIn, isUserLoaded, syncUserWithBackoff, setupTokenRefreshTimer]);
   
   // Export the token through context with a provider component - this must be created at every render
   const providerValue = useMemo(() => ({
     token: currentToken,
-    refreshToken: getAndCacheToken,
+    refreshToken: () => getAndCacheToken(true),
     isAuthenticated: !!isSignedIn && !!currentToken
   }), [currentToken, getAndCacheToken, isSignedIn]);
   

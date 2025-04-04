@@ -203,9 +203,33 @@ export function useCastVote() {
             userId = syncedUser.id;
           } else {
             debugLog("User sync failed, proceeding with original ID");
+            
+            // If sync failed due to token issues, try to refresh the token and retry once
+            if (retryCount < MAX_RETRIES) {
+              debugLog("Attempting to refresh token and retry vote");
+              setRetryCount(count => count + 1);
+              authToken = await getCurrentAuthToken(true); // Force refresh
+              
+              if (!authToken) {
+                throw new Error('Failed to refresh authentication. Please try again.');
+              }
+            }
           }
         } catch (syncError) {
           console.error("Error syncing user before casting vote:", syncError);
+          
+          // Try to refresh token on certain error types
+          if (syncError instanceof Error && 
+              syncError.message.includes('JWT') && 
+              retryCount < MAX_RETRIES) {
+            debugLog("JWT error during sync, trying token refresh");
+            setRetryCount(count => count + 1);
+            authToken = await getCurrentAuthToken(true); // Force refresh
+            
+            if (!authToken) {
+              throw new Error('Failed to refresh authentication. Please try again.');
+            }
+          }
         }
       }
       
@@ -303,9 +327,33 @@ export function useRemoveVote() {
             userId = syncedUser.id;
           } else {
             debugLog("User sync failed, proceeding with original ID");
+            
+            // If sync failed due to token issues, try to refresh the token and retry once
+            if (retryCount < MAX_RETRIES) {
+              debugLog("Attempting to refresh token and retry vote removal");
+              setRetryCount(count => count + 1);
+              authToken = await getCurrentAuthToken(true); // Force refresh
+              
+              if (!authToken) {
+                throw new Error('Failed to refresh authentication. Please try again.');
+              }
+            }
           }
         } catch (syncError) {
           console.error("Error syncing user before removing vote:", syncError);
+          
+          // Try to refresh token on certain error types
+          if (syncError instanceof Error && 
+              syncError.message.includes('JWT') && 
+              retryCount < MAX_RETRIES) {
+            debugLog("JWT error during sync, trying token refresh");
+            setRetryCount(count => count + 1);
+            authToken = await getCurrentAuthToken(true); // Force refresh
+            
+            if (!authToken) {
+              throw new Error('Failed to refresh authentication. Please try again.');
+            }
+          }
         }
       }
       
@@ -389,6 +437,12 @@ export function useUserVote(requestId: string) {
         console.error("Error getting token for vote query:", tokenError);
       }
       
+      // If no token available after attempts, return null to prevent further errors
+      if (!token) {
+        debugLog("No token available after attempts, will return null");
+        return null;
+      }
+      
       // Handle case where user is not synced with Supabase yet
       // Only trigger sync if we haven't synced globally yet
       if (isSignedIn && user && !isSynced && token && user.primaryEmailAddress?.emailAddress) {
@@ -418,11 +472,6 @@ export function useUserVote(requestId: string) {
       
       try {
         // Get the vote with the token
-        if (!token) {
-          debugLog("No token available for vote query, will return null");
-          return null;
-        }
-
         debugLog("Fetching vote with token");
         const vote = await votesService.getUserVote(effectiveUserId, requestId, token);
         debugLog("Vote query result:", vote ? "found vote" : "no vote found");

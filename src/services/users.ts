@@ -1,4 +1,5 @@
 import { getSupabaseClient, logTokenInfo, anonClient } from '@/lib/clerk-supabase';
+import clerkSupabase from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type User = Database['public']['Tables']['users']['Row'];
@@ -15,6 +16,10 @@ function debugLog(message: string, ...args: any[]) {
 
 // Track ongoing sync requests by user ID
 const pendingSyncs = new Map<string, Promise<User | null>>();
+
+// Track recently synced users to prevent excessive syncs
+const recentlySyncedUsers = new Map<string, number>();
+const SYNC_COOLDOWN = 60 * 1000; // 1 minute cooldown between syncs for the same user
 
 /**
  * Sync a Clerk user with Supabase
@@ -43,10 +48,43 @@ export async function syncUserWithSupabase(
     return null;
   }
   
+  // Check if this user was recently synced
+  const lastSyncTime = recentlySyncedUsers.get(id);
+  const now = Date.now();
+  if (lastSyncTime && now - lastSyncTime < SYNC_COOLDOWN) {
+    debugLog(`User ${id.substring(0, 8)}... was recently synced (${Math.round((now - lastSyncTime)/1000)}s ago), skipping sync`);
+    
+    // Just return the user info instead
+    try {
+      const { data } = await getSupabaseClient(authToken)
+        .from('users')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+        
+      if (data) {
+        debugLog("Returning existing user data without sync");
+        return data;
+      }
+    } catch (error) {
+      // If lookup fails due to token issues, continue with sync
+      if (error instanceof Error && error.message.includes('JWT')) {
+        debugLog("Token error during quick user lookup, will try full sync");
+      } else {
+        console.error("Error looking up existing user:", error);
+      }
+    }
+  }
+  
   // Check if there's already a sync in progress for this user
   if (pendingSyncs.has(id)) {
     debugLog(`Sync already in progress for user ${id.substring(0, 8)}..., reusing promise`);
     return pendingSyncs.get(id)!;
+  }
+  
+  // Check if token is expired - try to avoid syncing with expired tokens
+  if (authToken && clerkSupabase.isTokenExpired(authToken)) {
+    debugLog("Token is expired, sync will likely fail");
   }
   
   // Create a new sync promise
@@ -55,9 +93,25 @@ export async function syncUserWithSupabase(
   // Store the promise in the map
   pendingSyncs.set(id, syncPromise);
   
-  // When the promise resolves, remove it from the map
+  // When the promise resolves, remove it from the map and mark user as recently synced
   syncPromise.then(
-    () => pendingSyncs.delete(id),
+    (user) => {
+      pendingSyncs.delete(id);
+      if (user) {
+        recentlySyncedUsers.set(id, Date.now());
+        
+        // Clean up old entries to prevent memory leaks
+        if (recentlySyncedUsers.size > 100) {
+          const oldestEntries = Array.from(recentlySyncedUsers.entries())
+            .sort(([, time1], [, time2]) => time1 - time2)
+            .slice(0, 50);
+          
+          for (const [userId] of oldestEntries) {
+            recentlySyncedUsers.delete(userId);
+          }
+        }
+      }
+    },
     () => pendingSyncs.delete(id)
   );
   
@@ -102,9 +156,19 @@ async function syncUserWithSupabaseInternal(
       
       if (syncError) {
         debugLog("Database function failed with error:", syncError.message);
+        
+        // Check for JWT errors that indicate token issues
+        if (syncError.message.includes('JWT')) {
+          throw new Error(`JWT error: ${syncError.message}`);
+        }
       }
     } catch (rpcError) {
       debugLog("RPC function call failed:", rpcError instanceof Error ? rpcError.message : String(rpcError));
+      
+      // Re-throw JWT errors to signal token issues
+      if (rpcError instanceof Error && rpcError.message.includes('JWT')) {
+        throw rpcError;
+      }
     }
     
     // Fall back to upsert operation if the RPC function fails
@@ -116,6 +180,10 @@ async function syncUserWithSupabaseInternal(
       .select('*')
       .eq('id', id)
       .maybeSingle();
+    
+    if (lookupError && lookupError.message.includes('JWT')) {
+      throw new Error(`JWT error during user lookup: ${lookupError.message}`);
+    }
     
     if (existingUserById) {
       debugLog("Found existing user by ID, updating fields");
@@ -135,6 +203,10 @@ async function syncUserWithSupabaseInternal(
       
       if (updateError) {
         console.error("Error updating existing user:", updateError);
+        
+        if (updateError.message.includes('JWT')) {
+          throw new Error(`JWT error during user update: ${updateError.message}`);
+        }
       } else if (updatedUser) {
         debugLog("Successfully updated existing user");
         return updatedUser;
@@ -165,6 +237,10 @@ async function syncUserWithSupabaseInternal(
         
         if (updateError) {
           console.error("Error updating existing user by email:", updateError);
+          
+          if (updateError.message.includes('JWT')) {
+            throw new Error(`JWT error during user update by email: ${updateError.message}`);
+          }
         } else if (updatedUser) {
           debugLog("Successfully updated existing user's ID and fields");
           return updatedUser;
@@ -188,6 +264,10 @@ async function syncUserWithSupabaseInternal(
         
         if (insertError) {
           console.error("Error inserting new user:", insertError);
+          
+          if (insertError.message.includes('JWT')) {
+            throw new Error(`JWT error during user creation: ${insertError.message}`);
+          }
         } else if (newUser) {
           debugLog("Successfully created new user");
           return newUser;
@@ -211,6 +291,12 @@ async function syncUserWithSupabaseInternal(
     console.error("Failed to sync user after all attempts");
     return null;
   } catch (error) {
+    // Determine if this is a token-related error that should be propagated
+    if (error instanceof Error && error.message.includes('JWT')) {
+      debugLog("Token error during sync, propagating to caller");
+      throw error; // Let the caller handle token errors
+    }
+    
     console.error('Unexpected error in syncUserWithSupabase:', error);
     return null;
   }
