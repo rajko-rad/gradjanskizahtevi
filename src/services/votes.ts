@@ -228,9 +228,11 @@ export async function getUserVote(
     return null;
   }
 
-  // Use the authenticated client if a token is provided
-  const client = authToken ? getAuthClient(authToken) : supabase;
-  const isAuthenticated = !!authToken;
+  // Check if auth token is actually present to set isAuthenticated correctly
+  const isAuthenticated = !!authToken && authToken.length > 0;
+  
+  // Use the authenticated client if a valid token is provided
+  const client = isAuthenticated ? getAuthClient(authToken) : supabase;
   
   try {
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
@@ -238,17 +240,19 @@ export async function getUserVote(
     let effectiveUserId = userId;
     
     try {
-      const { data: userData, error: userError } = await client
-        .from('users')
-        .select('id')
-        .eq('id', userId)
-        .maybeSingle();
+      if (isAuthenticated) {
+        const { data: userData, error: userError } = await client
+          .from('users')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle();
 
-      if (userError) {
-        console.warn('Error finding Supabase user:', userError?.message || userError);
-        console.log('Will try the query anyway with the provided userId');
-      } else if (userData?.id) {
-        effectiveUserId = userData.id;
+        if (userError) {
+          console.warn('Error finding Supabase user:', userError?.message || userError);
+          console.log('Will try the query anyway with the provided userId');
+        } else if (userData?.id) {
+          effectiveUserId = userData.id;
+        }
       }
     } catch (error) {
       console.warn('Error during user lookup:', error);
@@ -271,7 +275,7 @@ export async function getUserVote(
       .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
+      if ((error.code === 'PGRST301' || error.message?.includes('JWT')) && isAuthenticated) {
         console.warn('Authentication error fetching user vote:', error.message);
         // Return null instead of throwing for auth errors
         return null;

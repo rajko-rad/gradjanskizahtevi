@@ -309,7 +309,7 @@ export function useSupabaseAuth() {
   }, [isSignedIn, syncUserWithClerk]);
 
   // Function to manually refresh auth if needed
-  const refreshAuth = useCallback(() => {
+  const refreshAuth = useCallback(async () => {
     console.log("Manual auth refresh requested");
     // Only refresh if not already in progress
     if (syncInProgress.current || GLOBAL_SYNC_IN_PROGRESS) {
@@ -321,9 +321,18 @@ export function useSupabaseAuth() {
     return syncUserWithClerk(true);
   }, [syncUserWithClerk]);
 
+  // Get current auth token - moved outside of supabaseClient for direct access
+  const getCurrentAuthToken = useCallback(() => {
+    return authToken.current;
+  }, []);
+
   // Memoized client provider to prevent unnecessary renders
   const supabaseClient = useCallback(() => {
-    return getAuthClient(authToken.current);
+    // Only create a new client if we have a token
+    if (authToken.current) {
+      return getAuthClient(authToken.current);
+    }
+    return supabase; // Use the anonymous client if no token is available
   }, []);
 
   return {
@@ -335,6 +344,7 @@ export function useSupabaseAuth() {
     supabase: supabaseClient(),
     error,
     refreshAuth,
-    authToken: authToken.current
+    authToken: authToken.current,
+    getCurrentAuthToken // Expose a method to get the current token
   };
 } 

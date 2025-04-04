@@ -101,7 +101,7 @@ export function useVoteStats(requestId: string) {
 
 export function useCastVote() {
   const queryClient = useQueryClient();
-  const { supabaseUser, authToken, tokenVerified, refreshAuth } = useSupabaseAuth();
+  const { supabaseUser, tokenVerified, refreshAuth, getCurrentAuthToken } = useSupabaseAuth();
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
@@ -132,13 +132,16 @@ export function useCastVote() {
         throw new Error('User not authenticated. Please sign in to vote.');
       }
       
-      if (!authToken) {
+      // Get the current auth token at execution time
+      const currentAuthToken = getCurrentAuthToken();
+      
+      if (!currentAuthToken) {
         console.error("Cannot cast vote: Missing authentication token");
         throw new Error('Authentication error. Please try signing out and in again.');
       }
       
       try {
-        const result = await votesService.castVote(supabaseUser.id, requestId, value, optionId, authToken);
+        const result = await votesService.castVote(supabaseUser.id, requestId, value, optionId, currentAuthToken);
         // Reset retry count on success
         if (retryCount > 0) {
           setRetryCount(0);
@@ -176,7 +179,7 @@ export function useCastVote() {
 
 export function useRemoveVote() {
   const queryClient = useQueryClient();
-  const { supabaseUser, authToken, tokenVerified, refreshAuth } = useSupabaseAuth();
+  const { supabaseUser, tokenVerified, refreshAuth, getCurrentAuthToken } = useSupabaseAuth();
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
@@ -199,13 +202,16 @@ export function useRemoveVote() {
         throw new Error('User not authenticated. Please sign in to remove your vote.');
       }
       
-      if (!authToken) {
+      // Get the current auth token at execution time
+      const currentAuthToken = getCurrentAuthToken();
+      
+      if (!currentAuthToken) {
         console.error("Cannot remove vote: Missing authentication token");
         throw new Error('Authentication error. Please try signing out and in again.');
       }
       
       try {
-        await votesService.removeVote(supabaseUser.id, requestId, authToken);
+        await votesService.removeVote(supabaseUser.id, requestId, currentAuthToken);
         // Reset retry count on success
         if (retryCount > 0) {
           setRetryCount(0);
@@ -241,7 +247,7 @@ export function useRemoveVote() {
 }
 
 export function useUserVote(requestId: string) {
-  const { supabaseUser, authToken, refreshAuth, tokenVerified } = useSupabaseAuth();
+  const { supabaseUser, refreshAuth, tokenVerified, getCurrentAuthToken } = useSupabaseAuth();
   const { user } = useUser();
   const [lastErrorCount, setLastErrorCount] = useState(0);
   const refreshAttempted = useRef(false);
@@ -250,34 +256,42 @@ export function useUserVote(requestId: string) {
   const effectiveUserId = supabaseUser?.id || user?.id;
 
   return useQuery({
-    queryKey: ['votes', 'user', effectiveUserId, requestId],
+    queryKey: ['votes', 'user', effectiveUserId, requestId, tokenVerified],
     queryFn: async () => {
       if (!effectiveUserId) return null;
+      
+      // Get the current auth token at execution time, not at hook creation time
+      const currentAuthToken = getCurrentAuthToken();
       
       // For debugging
       console.log('Fetching votes with: ', { 
         effectiveUserId, 
         clerkUserId: user?.id,
-        supabaseUser: supabaseUser?.id,
+        supabaseUserId: supabaseUser?.id,
         requestId,
-        authToken: authToken ? 'present' : 'missing',
+        hasAuthToken: !!currentAuthToken,
         tokenVerified
       });
       
       // If we have a user but no auth token or unverified token, try to refresh auth once
-      if (effectiveUserId && (!authToken || !tokenVerified) && !refreshAttempted.current && lastErrorCount === 0) {
+      if (effectiveUserId && (!currentAuthToken || !tokenVerified) && !refreshAttempted.current && lastErrorCount === 0) {
         console.log("Auth token missing or unverified, attempting to refresh before fetching votes");
         refreshAttempted.current = true;
         try {
           await refreshAuth();
-          // Continue with the fetch even if refresh didn't work, we'll fall back to anonymous views
+          // Get the fresh token after refresh
+          const refreshedToken = getCurrentAuthToken();
+          console.log("Auth refresh completed, token present:", !!refreshedToken);
         } catch (e) {
           console.error("Auth refresh failed:", e);
         }
       }
       
       try {
-        const result = await votesService.getUserVote(effectiveUserId, requestId, authToken);
+        // Always get the most current token
+        const tokenToUse = getCurrentAuthToken();
+        const result = await votesService.getUserVote(effectiveUserId, requestId, tokenToUse);
+        
         // Reset error count on success
         if (lastErrorCount > 0) {
           setLastErrorCount(0);
@@ -296,6 +310,11 @@ export function useUserVote(requestId: string) {
           refreshAttempted.current = true;
           try {
             await refreshAuth();
+            // Try once more with the fresh token
+            const freshToken = getCurrentAuthToken();
+            if (freshToken) {
+              return votesService.getUserVote(effectiveUserId, requestId, freshToken);
+            }
           } catch (e) {
             console.error("Auth refresh failed:", e);
           }

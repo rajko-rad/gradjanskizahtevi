@@ -20,8 +20,8 @@ let currentAuthToken: string | null = null;
  * @returns Authenticated Supabase client
  */
 export function getAuthClient(authToken: string | null) {
-  // If no token is provided, return the anonymous client
-  if (!authToken) {
+  // If no token is provided or it's empty, return the anonymous client
+  if (!authToken || authToken.trim() === '') {
     return supabase;
   }
 
@@ -39,38 +39,31 @@ export function getAuthClient(authToken: string | null) {
       authClientInstance.auth.setSession({
         access_token: authToken,
         refresh_token: '',
+      }).catch(error => {
+        console.error('Error updating session:', error);
+        // If updating fails, we'll recreate the client below
+        authClientInstance = null;
       });
       
-      // Update the current token
-      currentAuthToken = authToken;
-      
-      return authClientInstance;
-    } else {
-      // Create a new auth client if it doesn't exist yet
-      console.log('Creating new authenticated Supabase client');
-      authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
-        global: {
-          headers: {
-            Authorization: `Bearer ${authToken}`
-          }
-        }
-      });
-      
-      // Store the current token
-      currentAuthToken = authToken;
-      
-      return authClientInstance;
+      // If the client is still valid, update token and return it
+      if (authClientInstance) {
+        // Update the current token
+        currentAuthToken = authToken;
+        return authClientInstance;
+      }
     }
-  } catch (error) {
-    console.error('Error managing Supabase client:', error);
     
-    // In case of errors, recreate the client as a fallback
-    console.log('Recreating authenticated Supabase client after error');
+    // Create a new auth client if it doesn't exist yet or needed recreation
+    console.log('Creating new authenticated Supabase client');
     authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
       global: {
         headers: {
           Authorization: `Bearer ${authToken}`
         }
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
       }
     });
     
@@ -78,6 +71,33 @@ export function getAuthClient(authToken: string | null) {
     currentAuthToken = authToken;
     
     return authClientInstance;
+  } catch (error) {
+    console.error('Error managing Supabase client:', error);
+    
+    // In case of errors, recreate the client as a fallback
+    console.log('Recreating authenticated Supabase client after error');
+    try {
+      authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        },
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      });
+      
+      // Store the current token
+      currentAuthToken = authToken;
+      
+      return authClientInstance;
+    } catch (innerError) {
+      console.error('Failed to create client even as fallback, using anonymous client:', innerError);
+      // If all else fails, use the anonymous client
+      return supabase;
+    }
   }
 }
 
