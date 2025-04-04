@@ -1,4 +1,7 @@
 /* /index.html 200
 
+# Redirect from Cloudflare Pages domain to custom domain
+https://gradjanskizahtevi.pages.dev/* https://gradjanskizahtevi.org/:splat 301!
+
 # Handle CORS preflight requests
 /*  /.netlify/functions/cors-proxy  200! 
