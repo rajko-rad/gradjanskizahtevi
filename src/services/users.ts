@@ -1,83 +1,187 @@
 import { supabase } from '@/lib/supabase';
+import { getSupabaseClient, logTokenInfo } from '@/lib/clerk-supabase';
 import type { Database } from '@/types/supabase';
 
 export type User = Database['public']['Tables']['users']['Row'];
 
+// Debug mode toggle
+const DEBUG_MODE = true;
+
+// Debug logger function
+function debugLog(message: string, ...args: any[]) {
+  if (DEBUG_MODE) {
+    console.log(`USERS-SERVICE: ${message}`, ...args);
+  }
+}
+
 /**
  * Sync a Clerk user with Supabase
  * This should be called after a user signs in with Clerk
+ * @param id - The Clerk user ID
+ * @param email - The user's email
+ * @param fullName - The user's full name (optional)
+ * @param avatarUrl - The user's avatar URL (optional)
+ * @param authToken - Optional auth token to use an authenticated client
  */
 export async function syncUserWithSupabase(
   id: string,
   email: string,
   fullName: string | null = null,
-  avatarUrl: string | null = null
-): Promise<User> {
-  console.log("Syncing user with Supabase:", { id, email });
+  avatarUrl: string | null = null,
+  authToken?: string | null
+): Promise<User | null> {
+  debugLog("Syncing Clerk user with Supabase:", { 
+    id: id ? id.substring(0, 8) + '...' : 'missing', 
+    email: email || 'missing',
+    hasToken: !!authToken
+  });
+  
+  if (!id || !email) {
+    console.error("Missing required parameters for user sync", { id, email });
+    return null;
+  }
+  
+  // Get the appropriate client based on token availability
+  const client = getSupabaseClient(authToken);
+  
+  if (authToken) {
+    debugLog("Using authenticated client for user sync");
+    logTokenInfo(authToken);
+  } else {
+    debugLog("Using anonymous client for user sync (no token provided)");
+  }
   
   try {
-    // Try to use the sync_clerk_user function
-    const { data: syncedUser, error: syncError } = await supabase
-      .rpc('sync_clerk_user', {
-        p_id: id,
-        p_email: email,
-        p_full_name: fullName,
-        p_avatar_url: avatarUrl
-      })
-      .single();
-    
-    if (!syncError && syncedUser) {
-      console.log("Successfully synced user via database function");
-      return syncedUser as User;
+    // First try using the RPC function if available
+    try {
+      debugLog("Attempting to use sync_clerk_user RPC function");
+      const { data: syncedUser, error: syncError } = await client
+        .rpc('sync_clerk_user', {
+          p_id: id,
+          p_email: email,
+          p_full_name: fullName,
+          p_avatar_url: avatarUrl
+        })
+        .single();
+      
+      if (!syncError && syncedUser) {
+        debugLog("Successfully synced user via database function");
+        return syncedUser as User;
+      }
+      
+      if (syncError) {
+        debugLog("Database function failed with error:", syncError.message);
+      }
+    } catch (rpcError) {
+      debugLog("RPC function call failed:", rpcError instanceof Error ? rpcError.message : String(rpcError));
     }
     
-    // If the function call fails, fall back to the upsert approach
-    console.log("Sync function failed, falling back to direct operations");
+    // Fall back to upsert if RPC fails
+    debugLog("Falling back to direct upsert operation");
     
-    // Use upsert with email as the conflict detection
-    const { data: upsertedUser, error: upsertError } = await supabase
+    // Check for existing user first by ID
+    const { data: existingUserById, error: lookupError } = await client
       .from('users')
-      .upsert(
-        {
-          id,
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    
+    if (existingUserById) {
+      debugLog("Found existing user by ID, updating fields");
+      
+      // Update the existing user
+      const { data: updatedUser, error: updateError } = await client
+        .from('users')
+        .update({
           email,
           full_name: fullName,
           avatar_url: avatarUrl,
           updated_at: new Date().toISOString()
-        },
-        { 
-          onConflict: 'email',
-          ignoreDuplicates: false
-        }
-      )
-      .select();
-    
-    if (upsertError) {
-      console.error("Error upserting user:", upsertError);
+        })
+        .eq('id', id)
+        .select()
+        .single();
       
-      // Last attempt - try to retrieve the user
-      const { data: existingUser } = await supabase
+      if (updateError) {
+        console.error("Error updating existing user:", updateError);
+      } else if (updatedUser) {
+        debugLog("Successfully updated existing user");
+        return updatedUser;
+      }
+    } else {
+      // Check for existing user by email
+      const { data: existingUserByEmail } = await client
         .from('users')
         .select('*')
-        .or(`id.eq.${id},email.eq.${email}`)
+        .eq('email', email)
         .maybeSingle();
       
-      if (existingUser) {
-        console.log("Found existing user as fallback");
-        return existingUser as User;
+      if (existingUserByEmail) {
+        debugLog("Found existing user by email, updating ID and fields");
+        
+        // Update the existing user with the new ID
+        const { data: updatedUser, error: updateError } = await client
+          .from('users')
+          .update({
+            id, // Update to use the Clerk ID
+            full_name: fullName,
+            avatar_url: avatarUrl,
+            updated_at: new Date().toISOString()
+          })
+          .eq('email', email)
+          .select()
+          .single();
+        
+        if (updateError) {
+          console.error("Error updating existing user by email:", updateError);
+        } else if (updatedUser) {
+          debugLog("Successfully updated existing user's ID and fields");
+          return updatedUser;
+        }
+      } else {
+        debugLog("No existing user found, creating new user");
+        
+        // Insert new user
+        const { data: newUser, error: insertError } = await client
+          .from('users')
+          .insert({
+            id,
+            email,
+            full_name: fullName,
+            avatar_url: avatarUrl,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+        
+        if (insertError) {
+          console.error("Error inserting new user:", insertError);
+        } else if (newUser) {
+          debugLog("Successfully created new user");
+          return newUser;
+        }
       }
-      
-      throw new Error(`Failed to sync user: ${upsertError.message}`);
     }
     
-    if (upsertedUser && upsertedUser.length > 0) {
-      return upsertedUser[0] as User;
+    // Final fallback - try to retrieve the user one more time
+    debugLog("Attempting final fallback retrieval of user");
+    const { data: finalUser } = await client
+      .from('users')
+      .select('*')
+      .or(`id.eq.${id},email.eq.${email}`)
+      .maybeSingle();
+    
+    if (finalUser) {
+      debugLog("Retrieved user in final fallback");
+      return finalUser;
     }
     
-    throw new Error("No user data returned after upsert");
+    console.error("Failed to sync user after all attempts");
+    return null;
   } catch (error) {
     console.error('Unexpected error in syncUserWithSupabase:', error);
-    throw error;
+    return null;
   }
 }
 

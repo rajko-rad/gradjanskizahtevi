@@ -293,14 +293,22 @@ export async function getUserVote(
   const client = getSupabaseClient(authToken);
   
   try {
+    // Check if the ID is a Clerk ID (starting with "user_")
+    const isClerkId = userId.startsWith('user_');
+    
+    debugLog("Processing user ID:", {
+      isClerkId,
+      idPrefix: userId.substring(0, 5) + '...'
+    });
+    
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
     // This is necessary because Clerk IDs don't match the UUID format expected by Supabase
-    let effectiveUserId = userId;
+    let supabaseUserId = userId;
     let userFound = false;
     
     try {
-      if (isAuthenticated) {
-        debugLog("Looking up Supabase user ID");
+      if (isAuthenticated && isClerkId) {
+        debugLog("Looking up Supabase user ID for Clerk user");
         const { data: userData, error: userError } = await client
           .from('users')
           .select('id')
@@ -309,16 +317,22 @@ export async function getUserVote(
 
         if (userError) {
           console.warn('Error finding Supabase user:', userError?.message || userError);
-          console.log('Will try the query anyway with the provided userId');
+          debugLog('Will try the query anyway with the provided userId');
         } else if (userData?.id) {
           debugLog(`Found Supabase user: ${userData.id}`);
-          effectiveUserId = userData.id;
+          supabaseUserId = userData.id;
           userFound = true;
         } else {
-          debugLog("No matching Supabase user found");
+          debugLog("No matching Supabase user found, may need to sync user first");
+          
+          // If this is a Clerk ID and no Supabase user was found, 
+          // we should try to sync the user if possible
+          debugLog("User may not be synced yet, will proceed with original ID");
         }
       } else {
-        debugLog("Skipping user lookup (not authenticated)");
+        debugLog(isAuthenticated 
+          ? "Using provided ID (not a Clerk ID)" 
+          : "Skipping user lookup (not authenticated)");
       }
     } catch (error) {
       console.warn('Error during user lookup:', error);
@@ -328,18 +342,19 @@ export async function getUserVote(
 
     // Log query parameters
     console.log('Querying votes with:', { 
-      effectiveUserId, 
+      supabaseUserId, 
       requestId, 
       originalUserId: userId,
       isAuthenticated,
-      userFound
+      userFound,
+      isClerkId
     });
 
     try {
       const { data, error } = await client
         .from('votes')
         .select('*')
-        .eq('user_id', effectiveUserId)
+        .eq('user_id', supabaseUserId)
         .eq('request_id', requestId)
         .maybeSingle();
 
@@ -369,6 +384,17 @@ export async function getUserVote(
       }
 
       debugLog(`Vote query result: ${data ? 'found vote' : 'no vote found'}`);
+      
+      // If we didn't find a vote and the ID is a Clerk ID, 
+      // try using a different approach for the query
+      if (!data && isClerkId && !userFound) {
+        debugLog("No vote found with Clerk ID, trying to find user by email");
+        
+        // Unable to implement this without access to user email
+        // This is a limitation we should handle in the UI
+        debugLog("Note: For complete functionality, user sync should happen before vote queries");
+      }
+      
       return data;
     } catch (queryError) {
       console.error('Error executing votes query:', queryError);

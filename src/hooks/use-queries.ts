@@ -128,10 +128,15 @@ export function useCastVote() {
       optionId?: string | null;
     }) => {
       // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
-      const userId = supabaseUser?.id || user?.id;
+      let userId = supabaseUser?.id || user?.id;
+      const isSynced = !!supabaseUser?.id;
       
       if (!userId) {
         throw new Error('User not authenticated. Please sign in to vote.');
+      }
+      
+      if (!user) {
+        throw new Error('Clerk user not available. Please try again.');
       }
       
       // Get a fresh token directly from Clerk
@@ -155,6 +160,31 @@ export function useCastVote() {
       
       if (!authToken) {
         throw new Error('Authentication error. Please try signing out and in again.');
+      }
+      
+      // If user is not synced yet, we need to sync before proceeding
+      if (!isSynced && !!user.primaryEmailAddress?.emailAddress) {
+        debugLog("User not synced with Supabase yet, syncing before casting vote");
+        try {
+          const { syncUserWithSupabase } = await import('@/services/users');
+          const syncedUser = await syncUserWithSupabase(
+            user.id, 
+            user.primaryEmailAddress.emailAddress,
+            user.fullName,
+            user.imageUrl,
+            authToken
+          );
+          
+          if (syncedUser) {
+            debugLog("User sync completed before casting vote, using synced ID");
+            // Use the synced user ID if available
+            userId = syncedUser.id;
+          } else {
+            debugLog("User sync failed, proceeding with original ID");
+          }
+        } catch (syncError) {
+          console.error("Error syncing user before casting vote:", syncError);
+        }
       }
       
       try {
@@ -192,6 +222,11 @@ export function useCastVote() {
       queryClient.invalidateQueries({ 
         queryKey: ['votes', 'user', userId, variables.requestId] 
       });
+      
+      // Also invalidate user queries as they might have changed
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['users', userId] });
+      }
     },
     onError: (error) => {
       console.error("Voting error:", error);
@@ -210,10 +245,15 @@ export function useRemoveVote() {
   return useMutation({
     mutationFn: async ({ requestId }: { requestId: string }) => {
       // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
-      const userId = supabaseUser?.id || user?.id;
+      let userId = supabaseUser?.id || user?.id;
+      const isSynced = !!supabaseUser?.id;
       
       if (!userId) {
         throw new Error('User not authenticated. Please sign in to remove your vote.');
+      }
+      
+      if (!user) {
+        throw new Error('Clerk user not available. Please try again.');
       }
       
       // Get a fresh token directly from Clerk
@@ -237,6 +277,31 @@ export function useRemoveVote() {
       
       if (!authToken) {
         throw new Error('Authentication error. Please try signing out and in again.');
+      }
+      
+      // If user is not synced yet, we need to sync before proceeding
+      if (!isSynced && !!user.primaryEmailAddress?.emailAddress) {
+        debugLog("User not synced with Supabase yet, syncing before removing vote");
+        try {
+          const { syncUserWithSupabase } = await import('@/services/users');
+          const syncedUser = await syncUserWithSupabase(
+            user.id, 
+            user.primaryEmailAddress.emailAddress,
+            user.fullName,
+            user.imageUrl,
+            authToken
+          );
+          
+          if (syncedUser) {
+            debugLog("User sync completed before removing vote, using synced ID");
+            // Use the synced user ID if available
+            userId = syncedUser.id;
+          } else {
+            debugLog("User sync failed, proceeding with original ID");
+          }
+        } catch (syncError) {
+          console.error("Error syncing user before removing vote:", syncError);
+        }
       }
       
       try {
@@ -272,6 +337,11 @@ export function useRemoveVote() {
       queryClient.invalidateQueries({ 
         queryKey: ['votes', 'user', userId, variables.requestId] 
       });
+      
+      // Also invalidate user queries as they might have changed
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['users', userId] });
+      }
     },
     onError: (error) => {
       console.error("Vote removal error:", error);
@@ -290,6 +360,7 @@ export function useUserVote(requestId: string) {
   
   // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
   const effectiveUserId = supabaseUser?.id || user?.id;
+  const isSynced = !!supabaseUser?.id;
 
   // Log initial state for debugging
   useEffect(() => {
@@ -298,9 +369,10 @@ export function useUserVote(requestId: string) {
       isSignedIn,
       hasUser: !!user,
       hasSupabaseUser: !!supabaseUser,
-      effectiveUserId: effectiveUserId ? `${effectiveUserId.substring(0, 8)}...` : 'none'
+      effectiveUserId: effectiveUserId ? `${effectiveUserId.substring(0, 8)}...` : 'none',
+      userSynced: isSynced
     });
-  }, [requestId, user, supabaseUser, effectiveUserId, isSignedIn]);
+  }, [requestId, user, supabaseUser, effectiveUserId, isSignedIn, isSynced]);
 
   return useQuery({
     queryKey: ['votes', 'user', effectiveUserId, requestId],
@@ -319,7 +391,8 @@ export function useUserVote(requestId: string) {
       debugLog('Starting vote query for:', { 
         requestId,
         userId: effectiveUserId ? `${effectiveUserId.substring(0, 8)}...` : 'undefined',
-        authAttempts: authAttemptsRef.current
+        authAttempts: authAttemptsRef.current,
+        isSynced
       });
       
       // Try to get a fresh token directly from Clerk
@@ -333,6 +406,24 @@ export function useUserVote(requestId: string) {
         
         if (currentAuthToken) {
           debugLog(`Successfully obtained token from Clerk in ${tokenTime}ms`);
+          
+          // If user is not synced yet, we need to sync before proceeding
+          if (!isSynced && !!user.primaryEmailAddress?.emailAddress) {
+            debugLog("User not synced with Supabase yet, syncing before vote query");
+            try {
+              const { syncUserWithSupabase } = await import('@/services/users');
+              await syncUserWithSupabase(
+                user.id, 
+                user.primaryEmailAddress.emailAddress,
+                user.fullName,
+                user.imageUrl,
+                currentAuthToken
+              );
+              debugLog("User sync completed before vote query");
+            } catch (syncError) {
+              console.error("Error syncing user before vote query:", syncError);
+            }
+          }
         } else {
           debugLog(`No token returned from Clerk getToken after ${tokenTime}ms`);
           
@@ -370,7 +461,7 @@ export function useUserVote(requestId: string) {
       
       // Execute the query with whatever token we have (or null)
       try {
-        debugLog(`Executing vote query with token: ${currentAuthToken ? 'present' : 'missing'}`);
+        debugLog(`Executing vote query with token: ${currentAuthToken ? 'present' : 'missing'}, user sync status: ${isSynced ? 'synced' : 'not synced'}`);
         const queryStartTime = Date.now();
         const result = await votesService.getUserVote(effectiveUserId, requestId, currentAuthToken);
         const queryTime = Date.now() - queryStartTime;
