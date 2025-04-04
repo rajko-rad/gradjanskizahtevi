@@ -7,7 +7,7 @@ This document outlines the functionality and tasks needed to complete the Građa
 ### Authentication Integration
 - [x] Set up Clerk authentication integration with Supabase
 - [x] Configure Clerk JWT template for Supabase authentication
-- [ ] Configure Supabase Row Level Security (RLS) policies for protected resources
+- [x] Configure Supabase Row Level Security (RLS) policies for protected resources
 - [x] Implement user profile synchronization between Clerk and Supabase
 - [x] Fix user ID format compatibility between Clerk and Supabase (migration to TEXT type)
 
@@ -230,7 +230,9 @@ create table public.timeline_events (
 
 ### Deployment
 - [ ] Set up Cloudflare Pages for hosting
-- [ ] Configure environment variables
+- [ ] Configure environment variables for production
+- [ ] Create production Clerk application
+- [ ] Verify Supabase RLS in production environment
 - [ ] Set up CI/CD pipeline
 - [ ] Configure custom domain (gradjanskizahtevi.org)
 
@@ -295,11 +297,16 @@ Based on a code review, the following components or features need to be migrated
    - [x] Update database schema to use TEXT type for user IDs
    - [x] Add proper JWT template in Clerk
    - [x] Improve error handling in auth flow
-2. [ ] Implement Row Level Security (RLS) policies for Supabase to protect resources
+2. [x] Implement Row Level Security (RLS) policies for Supabase to protect resources
 3. [ ] Create missing UI components listed above
 4. [ ] Develop admin dashboard and moderation tools
 5. [ ] Add search functionality and filtering options
 6. [ ] Enhance user profiles with activity history
+7. [ ] Migrate to production environments:
+   - [ ] Create production Clerk application with proper domain setup
+   - [ ] Set up proper CORS and security headers for production
+   - [ ] Deploy to Cloudflare Pages
+   - [ ] Verify authentication and security in production
 
 ## Next Steps
 
@@ -345,10 +352,11 @@ See the complete guide in [SUPABASE_GUIDE.md](SUPABASE_GUIDE.md) for detailed in
 - Database schema created and populated with sample data
 - Migrations set up and versioned in Git
 - Supabase project linked with local development configuration
+- Row Level Security (RLS) policies implemented for all tables
 
 ### Future Database Tasks
 
-- Implement Row Level Security (RLS) policies
+- ✅ Implement Row Level Security (RLS) policies
 - Set up backup and restore procedures
 - Optimize indexes based on query patterns
 - Implement soft delete where appropriate 
