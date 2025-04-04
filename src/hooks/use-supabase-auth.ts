@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { setSupabaseToken } from '@/lib/supabase';
 import { syncUserWithSupabase, type User } from '@/services/users';
-import { supabase } from '@/lib/supabase';
+import { supabase, createAuthClient } from '@/lib/supabase';
 
 /**
  * Hook to handle authentication between Clerk and Supabase
@@ -15,16 +14,19 @@ export function useSupabaseAuth() {
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [canVote, setCanVote] = useState(false);
   const [supabaseAnonClient] = useState(() => supabase);
+  const [authClient, setAuthClient] = useState(supabase);
   
   // Add a ref to track if sync is in progress to prevent loops
   const syncInProgress = useRef(false);
   // Add a ref to track last sync time
   const lastSyncTime = useRef(0);
+  // Store the auth token
+  const authToken = useRef<string | null>(null);
 
-  const syncUserWithClerk = useCallback(async () => {
+  const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
     // Skip sync if it's already in progress or if we synced recently (within 5 seconds)
     const now = Date.now();
-    if (syncInProgress.current || (now - lastSyncTime.current < 5000)) {
+    if (syncInProgress.current || (!forceRefresh && (now - lastSyncTime.current < 5000))) {
       return;
     }
 
@@ -32,6 +34,8 @@ export function useSupabaseAuth() {
       setCanVote(false);
       setSupabaseUser(null);
       setIsLoading(false);
+      authToken.current = null;
+      setAuthClient(supabase); // Reset to anon client
       return;
     }
 
@@ -47,20 +51,30 @@ export function useSupabaseAuth() {
         // Get a JWT token from Clerk for Supabase
         console.log("Attempting to get Supabase JWT from Clerk...");
         const token = await getToken({ template: "supabase" });
+        authToken.current = token;
         console.log("Successfully obtained Supabase JWT from Clerk");
         
-        // Set the auth token in the Supabase client
-        await supabaseAnonClient.auth.setSession({
+        // Create a new authenticated client
+        const newAuthClient = createAuthClient(token);
+        setAuthClient(newAuthClient);
+        
+        // Also set the auth token in the default client
+        const { data, error } = await supabaseAnonClient.auth.setSession({
           access_token: token,
           refresh_token: '',
         });
         
-        tokenSucceeded = true;
+        if (error) {
+          console.error("Error setting Supabase session:", error);
+        } else {
+          console.log("Successfully set Supabase auth session");
+          tokenSucceeded = true;
+        }
         
       } catch (e) {
         console.error("Error getting Supabase JWT from Clerk:", e);
         console.log("Will continue with user sync using the public client without JWT");
-        // Don't throw here - continue with user sync using the public client
+        authToken.current = null;
       }
 
       // Always try to sync the user data, even if JWT failed
@@ -83,9 +97,27 @@ export function useSupabaseAuth() {
       setSupabaseUser(syncedUser);
       
       // Only set canVote to true if we have both a synced user and a token
-      setCanVote(tokenSucceeded && !!syncedUser);
-      if (!tokenSucceeded) {
+      if (tokenSucceeded && syncedUser) {
+        setCanVote(true);
+        console.log("User can vote - fully authenticated");
+      } else {
+        setCanVote(false);
         console.warn("User synced but JWT auth failed - voting functionality will be limited");
+      }
+      
+      // Verify Supabase authentication with the authClient
+      if (authToken.current) {
+        try {
+          const { data: authData } = await authClient.auth.getUser();
+          if (authData?.user) {
+            console.log("Supabase authentication confirmed:", authData.user.id);
+            setCanVote(true);
+          } else {
+            console.warn("Supabase authentication failed - JWT token may be invalid");
+          }
+        } catch (authError) {
+          console.error("Error verifying Supabase auth:", authError);
+        }
       }
       
       // Update last sync time
@@ -111,15 +143,23 @@ export function useSupabaseAuth() {
       setSupabaseUser(null);
       setCanVote(false);
       setIsLoading(false);
+      setAuthClient(supabase); // Reset to anon client
+      authToken.current = null;
     }
   }, [isSignedIn, user, syncUserWithClerk]);
+
+  // Add a function to manually refresh auth if needed
+  const refreshAuth = useCallback(() => {
+    return syncUserWithClerk(true);
+  }, [syncUserWithClerk]);
 
   return {
     isLoading,
     supabaseUser,
     canVote,
-    supabase: supabaseAnonClient,
+    supabase: authToken.current ? authClient : supabaseAnonClient, // Use auth client if we have a token
     error,
-    refreshUser: syncUserWithClerk
+    refreshUser: refreshAuth,
+    authToken: authToken.current
   };
 } 

@@ -19,6 +19,18 @@ export async function castVote(
     throw new Error("Invalid request ID");
   }
 
+  if (!userId) {
+    console.error("Invalid userId provided to castVote:", userId);
+    throw new Error("User not authenticated");
+  }
+
+  // Check if the user is authenticated with Supabase
+  const { data: authUser, error: authError } = await supabase.auth.getUser();
+  if (authError || !authUser.user) {
+    console.error("Authentication error in castVote:", authError);
+    throw new Error("User not authenticated in Supabase");
+  }
+
   try {
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
     const { data: userData, error: userError } = await supabase

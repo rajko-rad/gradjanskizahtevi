@@ -18,6 +18,21 @@ export function getSupabaseClient() {
 export default supabase;
 
 /**
+ * Create an authenticated Supabase client with the user's JWT token
+ * @param authToken - The JWT token from Clerk
+ * @returns Authenticated Supabase client
+ */
+export function createAuthClient(authToken: string) {
+  return createClient<Database>(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${authToken}`
+      }
+    }
+  });
+}
+
+/**
  * This function gets the Supabase token from Clerk and sets it for the Supabase client.
  * Call this function after a user signs in with Clerk.
  */
