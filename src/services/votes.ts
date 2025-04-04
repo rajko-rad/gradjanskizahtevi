@@ -25,17 +25,22 @@ export async function castVote(
     throw new Error("User not authenticated");
   }
 
-  // Use the authenticated client if a token is provided
-  const client = authToken ? getAuthClient(authToken) : supabase;
-
+  // Get the authenticated client - this is crucial for RLS policies to work
   try {
-    // Check if the user is authenticated with Supabase - only if using auth token
+    const client = getAuthClient(authToken);
+    
+    // Verify authentication
     if (authToken) {
-      const { data: authUser, error: authError } = await client.auth.getUser();
-      if (authError || !authUser.user) {
-        console.error("Authentication error in castVote:", authError);
+      const { data: authData, error: sessionError } = await client.auth.getSession();
+      
+      if (sessionError || !authData.session) {
+        console.error("Authentication error in castVote:", sessionError);
         throw new Error("User not authenticated in Supabase");
       }
+      
+      console.log("User authenticated in Supabase, proceeding with vote");
+    } else {
+      console.warn("No auth token provided for voting - RLS policies may block this operation");
     }
 
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping

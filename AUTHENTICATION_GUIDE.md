@@ -23,7 +23,7 @@ The application uses Clerk for authentication and Supabase for database operatio
 
 ## JWT Template Configuration
 
-The Clerk JWT template for Supabase must be configured as follows:
+The Clerk JWT template for Supabase must be configured exactly as follows for authentication to work properly:
 
 1. **Template name**: `supabase`
 
@@ -35,7 +35,11 @@ The Clerk JWT template for Supabase must be configured as follows:
    }
    ```
    
-   Note: Clerk automatically adds the `sub` claim with the user's ID
+   IMPORTANT: 
+   - Clerk automatically adds the `sub` claim with the user's ID
+   - Both `sub` and `aud` claims are REQUIRED for Supabase authentication
+   - The `aud` claim MUST be set to "authenticated"
+   - The `role` should be set to "authenticated" (or a custom role if using RBAC)
 
 3. **Signing algorithm**: HS256 (HMAC with SHA-256)
 
@@ -143,6 +147,10 @@ If you encounter issues with authentication:
    - Is the user record being created in Supabase?
    - Is the JWT token being generated correctly?
    - Are the policy expressions evaluating as expected?
+6. **Verify Supabase session** using browser tools:
+   - Check Network tab for API calls to Supabase
+   - Look for the Authorization header to confirm token is being sent
+   - Use a tool like jwt.io to decode and verify your tokens
 
 ## Next Steps
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { syncUserWithSupabase, type User } from '@/services/users';
-import { supabase, getAuthClient, clearAuthClient } from '@/lib/supabase';
+import { supabase, getAuthClient, clearAuthClient, setSupabaseToken } from '@/lib/supabase';
 
 // Minimum time between auth sync attempts in milliseconds
 const MIN_SYNC_INTERVAL = 5000;
@@ -16,6 +16,7 @@ export function useSupabaseAuth() {
   const [error, setError] = useState<Error | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [canVote, setCanVote] = useState(false);
+  const [tokenVerified, setTokenVerified] = useState(false);
   
   // Add a ref to track if sync is in progress to prevent loops
   const syncInProgress = useRef(false);
@@ -49,8 +50,13 @@ export function useSupabaseAuth() {
         console.log('User not signed in, clearing auth state');
         setCanVote(false);
         setSupabaseUser(null);
+        setTokenVerified(false);
         setIsLoading(false);
-        authToken.current = null;
+        if (authToken.current) {
+          // Clear supabase session if we had one
+          await setSupabaseToken(null);
+          authToken.current = null;
+        }
         clearAuthClient();
         lastSyncTime.current = now;
         isInitialized.current = true;
@@ -67,14 +73,21 @@ export function useSupabaseAuth() {
           
           if (token) {
             console.log("Successfully obtained Supabase JWT from Clerk");
+            // Set the token in Supabase session
+            await setSupabaseToken(token);
             authToken.current = token;
+            setTokenVerified(true);
           } else {
             console.warn("No JWT token returned from Clerk");
+            await setSupabaseToken(null);
             authToken.current = null;
+            setTokenVerified(false);
           }
         } catch (e) {
           console.error("Error getting Supabase JWT from Clerk:", e);
+          await setSupabaseToken(null);
           authToken.current = null;
+          setTokenVerified(false);
         }
       }
 
@@ -98,13 +111,29 @@ export function useSupabaseAuth() {
         setSupabaseUser(syncedUser);
       }
       
-      // Set canVote based on token status
-      setCanVote(!!authToken.current);
-      
+      // Verify Supabase session if we have a token
       if (authToken.current) {
-        console.log("User is fully authenticated with Supabase");
+        try {
+          const client = getAuthClient(authToken.current);
+          const { data, error } = await client.auth.getSession();
+          
+          if (error || !data.session) {
+            console.warn("Supabase session verification failed:", error?.message);
+            setCanVote(false);
+            setTokenVerified(false);
+          } else {
+            console.log("Supabase session verified successfully");
+            setCanVote(true);
+            setTokenVerified(true);
+          }
+        } catch (e) {
+          console.error("Error verifying Supabase session:", e);
+          setCanVote(false);
+          setTokenVerified(false);
+        }
       } else {
-        console.warn("User synced but JWT auth not available - voting will be limited");
+        setCanVote(false);
+        setTokenVerified(false);
       }
       
       // Update last sync time
@@ -115,6 +144,7 @@ export function useSupabaseAuth() {
       console.error("Error in Clerk-Supabase auth sync:", e);
       setError(e as Error);
       setCanVote(false);
+      setTokenVerified(false);
     } finally {
       setIsLoading(false);
       syncInProgress.current = false;
@@ -124,9 +154,21 @@ export function useSupabaseAuth() {
   // Initial sync after mount and when auth state changes
   useEffect(() => {
     if (!isInitialized.current || !syncInProgress.current) {
-      syncUserWithClerk();
+      syncUserWithClerk(true); // Force refresh on first load
     }
   }, [isSignedIn, user, syncUserWithClerk]);
+
+  // Add periodic token refresher when user is signed in
+  useEffect(() => {
+    if (!isSignedIn) return;
+    
+    // Refresh the token every 55 minutes (before the 1-hour expiry)
+    const refreshInterval = setInterval(() => {
+      syncUserWithClerk(true); // Force refresh
+    }, 55 * 60 * 1000);
+    
+    return () => clearInterval(refreshInterval);
+  }, [isSignedIn, syncUserWithClerk]);
 
   // Function to manually refresh auth if needed
   const refreshAuth = useCallback(() => {
@@ -142,6 +184,7 @@ export function useSupabaseAuth() {
     isLoading,
     supabaseUser,
     canVote,
+    tokenVerified,
     // Return appropriate client based on auth state
     supabase: getClient(),
     error,
