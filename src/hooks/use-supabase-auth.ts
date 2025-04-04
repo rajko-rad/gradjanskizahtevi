@@ -59,6 +59,49 @@ const setSupabaseToken = async (token: string | null) => {
 };
 
 /**
+ * Detect if the app is running on the client-side in a browser environment
+ * Used to avoid attempting to access browser-only APIs during SSR
+ */
+function isBrowser() {
+  return typeof window !== 'undefined';
+}
+
+/**
+ * Try to load a cached token from localStorage if available
+ * This helps reduce flashing of anonymous clients on page load
+ */
+function tryLoadCachedToken() {
+  if (!isBrowser()) return null;
+  
+  try {
+    const cachedTokenData = localStorage.getItem('auth_token_cache');
+    if (!cachedTokenData) return null;
+    
+    const { token, timestamp, expiry } = JSON.parse(cachedTokenData);
+    
+    // Check if token is expired
+    const now = Date.now();
+    if (timestamp && expiry && now < expiry) {
+      debugLog("Loaded cached token from localStorage");
+      return token;
+    }
+    
+    // Remove expired token
+    localStorage.removeItem('auth_token_cache');
+    return null;
+  } catch (error) {
+    console.error("Error loading cached token:", error);
+    return null;
+  }
+}
+
+// Try to restore token from cache
+const initialCachedToken = tryLoadCachedToken();
+if (initialCachedToken) {
+  tokenCache.set(initialCachedToken);
+}
+
+/**
  * Hook to handle authentication between Clerk and Supabase
  */
 export function useSupabaseAuth() {
@@ -76,7 +119,7 @@ export function useSupabaseAuth() {
   // Add a ref to track last sync time
   const lastSyncTime = useRef(0);
   // Store the auth token
-  const authToken = useRef<string | null>(null);
+  const authToken = useRef<string | null>(initialCachedToken);
   // Track initialized state
   const isInitialized = useRef(false);
   // Track retry attempts
@@ -102,6 +145,22 @@ export function useSupabaseAuth() {
         
         // Also update our local reference
         authToken.current = token;
+        
+        // Store in localStorage for persistence
+        if (isBrowser()) {
+          try {
+            // Calculate expiry time (50 minutes from now)
+            const expiry = Date.now() + TOKEN_REFRESH_THRESHOLD;
+            
+            localStorage.setItem('auth_token_cache', JSON.stringify({
+              token,
+              timestamp: Date.now(),
+              expiry
+            }));
+          } catch (storageError) {
+            console.error("Error storing token in localStorage:", storageError);
+          }
+        }
         
         return token;
       } 
@@ -156,6 +215,11 @@ export function useSupabaseAuth() {
           // Clear supabase session if we had one
           await setSupabaseToken(null);
           authToken.current = null;
+          
+          // Clear localStorage cache
+          if (isBrowser()) {
+            localStorage.removeItem('auth_token_cache');
+          }
         }
         
         // Update state and flags
@@ -201,6 +265,9 @@ export function useSupabaseAuth() {
         }
       }
 
+      // Skip further processing if component unmounted during async operation
+      if (!isMounted.current) return;
+
       // Sync user data with Supabase regardless of JWT status
       if (user) {
         const primaryEmail = user.primaryEmailAddress?.emailAddress;
@@ -230,6 +297,9 @@ export function useSupabaseAuth() {
           }
         }
       }
+      
+      // Skip further processing if component unmounted
+      if (!isMounted.current) return;
       
       // Verify Supabase session if we have a token
       if (authToken.current && isMounted.current) {

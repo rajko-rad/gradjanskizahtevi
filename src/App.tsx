@@ -9,7 +9,7 @@ import { syncUserWithSupabase } from "@/services/users";
 import { getSupabaseClient, logTokenInfo } from "@/lib/clerk-supabase"; 
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, createContext, useContext } from "react";
 
 // Debug mode toggle
 const DEBUG_MODE = true;
@@ -34,6 +34,21 @@ const queryClient = new QueryClient({
 // Constants for auth handling
 const MAX_SYNC_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 500;
+
+// Create a context for auth state
+type AuthContextType = {
+  token: string | null;
+  refreshToken: () => Promise<string | null>;
+  isAuthenticated: boolean;
+};
+
+const AuthContext = createContext<AuthContextType>({
+  token: null,
+  refreshToken: async () => null,
+  isAuthenticated: false,
+});
+
+export const useAuthContext = () => useContext(AuthContext);
 
 // Create a wrapper component that uses the hook
 const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -196,6 +211,13 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [isSignedIn, isUserLoaded, syncUserWithBackoff]);
   
+  // Export the token through context with a provider component - this must be created at every render
+  const providerValue = useMemo(() => ({
+    token: currentToken,
+    refreshToken: getAndCacheToken,
+    isAuthenticated: !!isSignedIn && !!currentToken
+  }), [currentToken, getAndCacheToken, isSignedIn]);
+  
   // Show loading indicator while initializing
   if (isInitializing) {
     return (
@@ -206,15 +228,12 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
     );
   }
   
-  // Export the token through context with a provider component
-  const providerValue = useMemo(() => ({
-    token: currentToken,
-    refreshToken: getAndCacheToken,
-    isAuthenticated: !!isSignedIn && !!currentToken
-  }), [currentToken, getAndCacheToken, isSignedIn]);
-  
-  // Use useMemo to prevent unnecessary re-renders of children
-  return useMemo(() => <>{children}</>, [children]);
+  // Return the context provider with children
+  return (
+    <AuthContext.Provider value={providerValue}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 const App = () => (

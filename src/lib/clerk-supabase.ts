@@ -4,6 +4,14 @@ import type { Database } from '@/types/supabase';
 // Debug mode toggle
 const DEBUG_MODE = true;
 
+// Setting to control frequency of anonymous client debug messages
+const VERBOSE_ANONYMOUS_LOGS = false;
+
+// Last time we logged an anonymous client message
+let lastAnonLogTime = 0;
+// Minimum gap between anonymous client logs (in ms)
+const MIN_ANON_LOG_INTERVAL = 2000;
+
 // Debug logger function
 function debugLog(message: string, ...args: any[]) {
   if (DEBUG_MODE) {
@@ -17,6 +25,9 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 // Create a single anonymous client instance for unauthenticated requests
 export const anonClient = createClient<Database>(supabaseUrl, supabaseKey);
+
+// Cache for authenticated clients to reduce number of client instances
+const authClientCache = new Map<string, ReturnType<typeof createClient<Database>>>();
 
 /**
  * Create a new Supabase client with the provided JWT token from Clerk
@@ -32,12 +43,21 @@ export function createAuthClient(token: string | null | undefined) {
     return anonClient;
   }
 
-  debugLog('Creating authenticated client with token');
+  // Generate a key for caching (first 8 chars of token plus last 8 chars)
+  const cacheKey = `${token.substring(0, 8)}...${token.substring(token.length - 8)}`;
+  
+  // Check if we already have a client for this token
+  if (authClientCache.has(cacheKey)) {
+    debugLog('Reusing existing auth client from cache');
+    return authClientCache.get(cacheKey)!;
+  }
+  
+  debugLog('Creating new authenticated client with token');
   
   try {
     // Create fresh client with token as Authorization header
     // This bypasses Supabase Auth and directly uses the JWT for RLS
-    return createClient<Database>(supabaseUrl, supabaseKey, {
+    const client = createClient<Database>(supabaseUrl, supabaseKey, {
       global: {
         headers: {
           Authorization: `Bearer ${token}`
@@ -50,6 +70,18 @@ export function createAuthClient(token: string | null | undefined) {
         detectSessionInUrl: false
       }
     });
+    
+    // Cache the client
+    authClientCache.set(cacheKey, client);
+    
+    // Limit cache size to prevent memory leaks
+    if (authClientCache.size > 5) {
+      // Remove oldest entry (first key)
+      const firstKey = authClientCache.keys().next().value;
+      authClientCache.delete(firstKey);
+    }
+    
+    return client;
   } catch (error) {
     console.error('Error creating authenticated Supabase client:', error);
     return anonClient;
@@ -97,7 +129,13 @@ export function logTokenInfo(token: string | null | undefined) {
  */
 export function getSupabaseClient(token?: string | null) {
   if (!token) {
-    debugLog('supabaseClient using anonymous client (no token)');
+    // Only log anonymous client usage if verbose logging is enabled
+    // or if enough time has passed since the last log
+    const now = Date.now();
+    if (VERBOSE_ANONYMOUS_LOGS || (now - lastAnonLogTime > MIN_ANON_LOG_INTERVAL)) {
+      debugLog('supabaseClient using anonymous client (no token)');
+      lastAnonLogTime = now;
+    }
     return anonClient;
   }
   

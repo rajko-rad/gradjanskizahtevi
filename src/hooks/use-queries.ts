@@ -322,22 +322,23 @@ export function useUserVote(requestId: string) {
   const [authAttempts, setAuthAttempts] = useState(0);
   const queryClient = useQueryClient();
   const MAX_AUTH_ATTEMPTS = 2;
-  
-  // Track when we need to skip invalidations to prevent loops
-  const skipInvalidate = useRef(false);
+  const queryRefreshRef = useRef(false);
   
   // Get effective user ID, prefer Supabase user ID
   const effectiveUserId = supabaseUser?.id || user?.id || 'none';
   const isSynced = !!supabaseUser?.id;
   
-  debugLog("useUserVote hook initialized with:", {
-    requestId,
-    isSignedIn,
-    hasUser: !!user,
-    hasSupabaseUser: !!supabaseUser,
-    effectiveUserId,
-    isSynced
-  });
+  // Only log initialization once per mount
+  useEffect(() => {
+    debugLog("useUserVote hook initialized with:", {
+      requestId,
+      isSignedIn,
+      hasUser: !!user,
+      hasSupabaseUser: !!supabaseUser,
+      effectiveUserId,
+      isSynced
+    });
+  }, [requestId, isSignedIn, user, supabaseUser, effectiveUserId, isSynced]);
   
   // Query for user's vote on this request
   const voteQuery = useQuery({
@@ -360,11 +361,11 @@ export function useUserVote(requestId: string) {
       let token: string | null = null;
       
       try {
-        token = await getCurrentAuthToken(false);
+        token = await getCurrentAuthToken(queryRefreshRef.current);
+        queryRefreshRef.current = false;
         
-        // If no cached token, try to get a fresh one
         if (!token) {
-          debugLog("Getting fresh token from Clerk");
+          debugLog("No cached token, trying direct token fetch");
           token = await getToken({ template: 'supabase' });
         } else {
           debugLog("Using cached token for vote query");
@@ -375,9 +376,9 @@ export function useUserVote(requestId: string) {
       
       // Handle case where user is not synced with Supabase yet
       if (isSignedIn && user && !isSynced && token && user.primaryEmailAddress?.emailAddress) {
-        debugLog("User not synced with Supabase yet, syncing before vote query");
-        
         try {
+          debugLog("User not synced with Supabase yet, syncing before vote query");
+          
           // Sync the user
           const { syncUserWithSupabase } = await import('@/services/users');
           await syncUserWithSupabase(
@@ -388,12 +389,10 @@ export function useUserVote(requestId: string) {
             token
           );
           
-          // After syncing, we should skip invalidation to prevent loops
-          skipInvalidate.current = true;
-          
-          // Invalidate queries that depend on this user 
+          // Invalidate queries that depend on this user but don't trigger a refetch yet
           queryClient.invalidateQueries({
             queryKey: ['users', user.id],
+            refetchType: 'none'
           });
         } catch (syncError) {
           console.error("Error syncing user in useUserVote:", syncError);
@@ -402,27 +401,35 @@ export function useUserVote(requestId: string) {
       
       try {
         // Get the vote with the token
+        if (!token) {
+          debugLog("No token available for vote query, will return null");
+          return null;
+        }
+
+        debugLog("Fetching vote with token");
         const vote = await votesService.getUserVote(effectiveUserId, requestId, token);
+        debugLog("Vote query result:", vote ? "found vote" : "no vote found");
         return vote;
       } catch (error: any) {
-        // Handle token/auth errors by retrying once
+        // Handle token/auth errors by retrying once with forced refresh
         if (error?.message?.includes('JWT') || error?.message?.includes('auth') || error?.message?.includes('permission')) {
           if (authAttempts < MAX_AUTH_ATTEMPTS) {
             debugLog(`Auth error in vote query, retrying (${authAttempts + 1}/${MAX_AUTH_ATTEMPTS})`);
             setAuthAttempts(prev => prev + 1);
             
-            // Force token refresh on retry
-            try {
-              const freshToken = await getCurrentAuthToken(true);
-              
-              if (freshToken) {
-                // Try again with fresh token
-                const vote = await votesService.getUserVote(effectiveUserId, requestId, freshToken);
-                return vote;
-              }
-            } catch (retryError) {
-              console.error("Error in auth retry:", retryError);
-            }
+            // Mark for token refresh on next attempt
+            queryRefreshRef.current = true;
+            
+            // Force a refetch of this query
+            setTimeout(() => {
+              queryClient.invalidateQueries({ 
+                queryKey: ['votes', 'user', effectiveUserId, requestId],
+                refetchType: 'active'
+              });
+            }, 100);
+            
+            // Return null for this attempt
+            return null;
           }
         }
         
@@ -431,10 +438,11 @@ export function useUserVote(requestId: string) {
         return null;
       }
     },
-    // Enable query only if user is signed in
-    enabled: !!isSignedIn && !!user && !!requestId,
+    // Enable query only if user is signed in and we have a user ID
+    enabled: !!isSignedIn && !!user && !!requestId && effectiveUserId !== 'none',
     // Short stale time because votes might change frequently
     staleTime: 30000,
+    retry: false // We handle retries manually
   });
   
   return {
