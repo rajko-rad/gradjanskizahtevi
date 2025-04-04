@@ -32,9 +32,8 @@ export function Header() {
 
         {/* Desktop menu */}
         <nav className="hidden md:flex items-center gap-8">
-          <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">O platformi</a>
           <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">Zahtevi</a>
-          <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">Diskusije</a>
+          <a href="#" className="text-sm font-medium text-gray-600 hover:text-serbia-blue transition-colors">Resursi</a>
           
           <div className="flex items-center gap-3 ml-4">
             <Button variant="outline" className="border-serbia-blue text-serbia-blue hover:bg-serbia-blue/10">
@@ -53,9 +52,8 @@ export function Header() {
       {isMenuOpen && (
         <div className="bg-white shadow-md md:hidden">
           <div className="px-4 py-6 space-y-6">
-            <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">O platformi</a>
             <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">Zahtevi</a>
-            <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">Diskusije</a>
+            <a href="#" className="block text-sm font-medium text-gray-600 hover:text-serbia-blue">Resursi</a>
             
             <div className="flex flex-col gap-3 pt-2">
               <Button variant="outline" className="w-full border-serbia-blue text-serbia-blue hover:bg-serbia-blue/10">
