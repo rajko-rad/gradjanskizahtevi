@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { setSupabaseToken } from '@/lib/supabase';
 import { syncUserWithSupabase, type User } from '@/services/users';
@@ -11,12 +11,23 @@ export function useSupabaseAuth() {
   const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
-  const [, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [canVote, setCanVote] = useState(false);
   const [supabaseAnonClient] = useState(() => supabase);
+  
+  // Add a ref to track if sync is in progress to prevent loops
+  const syncInProgress = useRef(false);
+  // Add a ref to track last sync time
+  const lastSyncTime = useRef(0);
 
   const syncUserWithClerk = useCallback(async () => {
+    // Skip sync if it's already in progress or if we synced recently (within 5 seconds)
+    const now = Date.now();
+    if (syncInProgress.current || (now - lastSyncTime.current < 5000)) {
+      return;
+    }
+
     if (!isSignedIn || !user) {
       setCanVote(false);
       setSupabaseUser(null);
@@ -25,6 +36,7 @@ export function useSupabaseAuth() {
     }
 
     try {
+      syncInProgress.current = true;
       setIsLoading(true);
       console.log("Attempting to sync Clerk user with Supabase...");
       
@@ -38,7 +50,7 @@ export function useSupabaseAuth() {
         console.log("Successfully obtained Supabase JWT from Clerk");
         
         // Set the auth token in the Supabase client
-        supabaseAnonClient.auth.setSession({
+        await supabaseAnonClient.auth.setSession({
           access_token: token,
           refresh_token: '',
         });
@@ -76,23 +88,38 @@ export function useSupabaseAuth() {
         console.warn("User synced but JWT auth failed - voting functionality will be limited");
       }
       
+      // Update last sync time
+      lastSyncTime.current = Date.now();
+      
     } catch (e) {
       console.error("Error in Clerk-Supabase auth sync:", e);
       setError(e as Error);
       setCanVote(false);
     } finally {
       setIsLoading(false);
+      syncInProgress.current = false;
     }
   }, [isSignedIn, user, supabaseAnonClient, getToken]);
 
   useEffect(() => {
-    syncUserWithClerk();
-  }, [syncUserWithClerk]);
+    // Only sync if user state changed and we have a user
+    if (isSignedIn && user) {
+      syncUserWithClerk();
+    } else if (!isSignedIn) {
+      // Clear Supabase session when signed out
+      supabaseAnonClient.auth.signOut();
+      setSupabaseUser(null);
+      setCanVote(false);
+      setIsLoading(false);
+    }
+  }, [isSignedIn, user, syncUserWithClerk]);
 
   return {
     isLoading,
     supabaseUser,
     canVote,
     supabase: supabaseAnonClient,
+    error,
+    refreshUser: syncUserWithClerk
   };
 } 
