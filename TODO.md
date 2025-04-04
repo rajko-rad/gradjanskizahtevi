@@ -6,8 +6,10 @@ This document outlines the functionality and tasks needed to complete the Građa
 
 ### Authentication Integration
 - [x] Set up Clerk authentication integration with Supabase
+- [x] Configure Clerk JWT template for Supabase authentication
 - [ ] Configure Supabase Row Level Security (RLS) policies for protected resources
 - [x] Implement user profile synchronization between Clerk and Supabase
+- [x] Fix user ID format compatibility between Clerk and Supabase (migration to TEXT type)
 
 ### Database Schema
 - [x] Create database schema with all required tables
@@ -21,7 +23,7 @@ All database tables have been implemented through migrations. Below is the schem
 #### Users Table
 ```sql
 create table public.users (
-  id uuid primary key,
+  id text primary key,
   email text unique not null,
   full_name text,
   avatar_url text,
@@ -91,7 +93,7 @@ create table public.options (
 ```sql
 create table public.votes (
   id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.users not null,
+  user_id text references public.users not null,
   request_id text references public.requests not null,
   option_id uuid references public.options,
   value text not null,
@@ -106,7 +108,7 @@ create table public.votes (
 create table public.suggested_requests (
   id uuid default gen_random_uuid() primary key,
   category_id text references public.categories not null,
-  user_id uuid references public.users not null,
+  user_id text references public.users not null,
   title text not null,
   description text not null,
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
@@ -119,7 +121,7 @@ create table public.suggested_requests (
 ```sql
 create table public.suggested_request_votes (
   id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.users not null,
+  user_id text references public.users not null,
   suggested_request_id uuid references public.suggested_requests not null,
   value integer not null check (value in (-1, 1)),
   created_at timestamp with time zone default now() not null,
@@ -131,7 +133,7 @@ create table public.suggested_request_votes (
 ```sql
 create table public.comments (
   id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.users not null,
+  user_id text references public.users not null,
   request_id text references public.requests not null,
   parent_id uuid references public.comments,
   content text not null,
@@ -144,7 +146,7 @@ create table public.comments (
 ```sql
 create table public.comment_votes (
   id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.users not null,
+  user_id text references public.users not null,
   comment_id uuid references public.comments not null,
   value integer not null check (value in (-1, 1)),
   created_at timestamp with time zone default now() not null,
@@ -170,6 +172,8 @@ create table public.timeline_events (
 
 ### Authentication & User Management
 - [x] Complete Clerk integration for authentication
+- [x] Set up JWT template in Clerk for Supabase authentication
+- [x] Implement robust error handling for auth edge cases
 - [ ] Create protected routes that require authentication
 - [x] Implement user profile synchronization with Supabase
 - [ ] Implement user profile page with voting history
@@ -181,6 +185,7 @@ create table public.timeline_events (
 - [x] Ensure users can only vote once per request
 - [x] Add vote analytics and visualization (total votes, percentages)
 - [x] Implement "remove vote" functionality
+- [x] Fix user ID compatibility issues between Clerk and Supabase
 
 ### Comments System
 - [x] Replace mock comments with real database operations
@@ -286,11 +291,15 @@ Based on a code review, the following components or features need to be migrated
    - Search results display
 
 ## Next Implementation Steps
-1. Implement Row Level Security (RLS) policies for Supabase to protect resources
-2. Create missing UI components listed above
-3. Develop admin dashboard and moderation tools
-4. Add search functionality and filtering options
-5. Enhance user profiles with activity history
+1. [x] Fix authentication between Clerk and Supabase
+   - [x] Update database schema to use TEXT type for user IDs
+   - [x] Add proper JWT template in Clerk
+   - [x] Improve error handling in auth flow
+2. [ ] Implement Row Level Security (RLS) policies for Supabase to protect resources
+3. [ ] Create missing UI components listed above
+4. [ ] Develop admin dashboard and moderation tools
+5. [ ] Add search functionality and filtering options
+6. [ ] Enhance user profiles with activity history
 
 ## Next Steps
 
@@ -302,13 +311,19 @@ Based on a code review, the following components or features need to be migrated
    - ✅ Ensure type definitions match database schema
    - ✅ Update ExtendedRequest and other types with missing properties
 
-3. **Implement missing pages**
+3. ✅ **Fix authentication integration** (DONE)
+   - ✅ Update database schema to use TEXT type for user IDs
+   - ✅ Configure proper JWT template in Clerk
+   - ✅ Improve error handling in useSupabaseAuth hook
+   - ✅ Update voting components to use proper auth state
+
+4. **Implement missing pages**
    - Category detail page
    - Request detail page
    - Suggestion submission form
    - User profile page
 
-4. **Complete the admin section**
+5. **Complete the admin section**
    - Admin dashboard
    - Content moderation tools
    - Analytics dashboard 
