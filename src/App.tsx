@@ -25,8 +25,17 @@ function debugLog(message: string, ...args: any[]) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      staleTime: 30000,
+      // Default stale time (30 seconds)
+      staleTime: 30 * 1000,
+      
+      // Wait and batch requests made in the same tick - reduces parallel requests
+      gcTime: 10 * 60 * 1000, // Keep cache for 10 minutes
+      
+      // Avoid refetching on window focus by default, let components control this
+      refetchOnWindowFocus: false,
+      
+      // Batch queries in the same tick (important for parallel vote queries!)
+      networkMode: 'offlineFirst',
     },
   },
 });

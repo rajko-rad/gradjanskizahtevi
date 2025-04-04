@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase';
 
 // Debug mode toggle
-const DEBUG_MODE = true;
+const DEBUG_MODE = process.env.NODE_ENV === 'development';
 
 // Setting to control frequency of anonymous client debug messages
 const VERBOSE_ANONYMOUS_LOGS = false;
@@ -10,7 +10,30 @@ const VERBOSE_ANONYMOUS_LOGS = false;
 // Last time we logged an anonymous client message
 let lastAnonLogTime = 0;
 // Minimum gap between anonymous client logs (in ms)
-const MIN_ANON_LOG_INTERVAL = 2000;
+const MIN_ANON_LOG_INTERVAL = 5000; // Increase to 5 seconds to reduce console spam
+
+// Throttled log function for high-frequency operations
+const throttledLogs = new Map<string, number>();
+function throttledDebugLog(key: string, message: string, ...args: any[]) {
+  if (!DEBUG_MODE) return;
+  
+  const now = Date.now();
+  const lastTime = throttledLogs.get(key) || 0;
+  
+  if (now - lastTime > MIN_ANON_LOG_INTERVAL) {
+    console.log(`CLERK-SUPABASE: ${message}`, ...args);
+    throttledLogs.set(key, now);
+    
+    // Clean up old entries
+    if (throttledLogs.size > 20) {
+      const keys = Array.from(throttledLogs.keys());
+      const oldestKey = keys.reduce((oldest, current) => 
+        (throttledLogs.get(oldest) || 0) < (throttledLogs.get(current) || 0) ? oldest : current
+      );
+      throttledLogs.delete(oldestKey);
+    }
+  }
+}
 
 // Debug logger function
 function debugLog(message: string, ...args: any[]) {
@@ -133,7 +156,7 @@ export function getSupabaseClient(token?: string | null) {
     // or if enough time has passed since the last log
     const now = Date.now();
     if (VERBOSE_ANONYMOUS_LOGS || (now - lastAnonLogTime > MIN_ANON_LOG_INTERVAL)) {
-      debugLog('supabaseClient using anonymous client (no token)');
+      throttledDebugLog('anon-client', 'supabaseClient using anonymous client (no token)');
       lastAnonLogTime = now;
     }
     return anonClient;

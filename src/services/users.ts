@@ -4,7 +4,7 @@ import type { Database } from '@/types/supabase';
 export type User = Database['public']['Tables']['users']['Row'];
 
 // Debug mode toggle
-const DEBUG_MODE = true;
+const DEBUG_MODE = process.env.NODE_ENV === 'development';
 
 // Debug logger function
 function debugLog(message: string, ...args: any[]) {
@@ -12,6 +12,9 @@ function debugLog(message: string, ...args: any[]) {
     console.log(`USERS-SERVICE: ${message}`, ...args);
   }
 }
+
+// Track ongoing sync requests by user ID
+const pendingSyncs = new Map<string, Promise<User | null>>();
 
 /**
  * Sync a Clerk user with Supabase
@@ -40,12 +43,41 @@ export async function syncUserWithSupabase(
     return null;
   }
   
-  // Get the appropriate client based on token availability
-  const client = getSupabaseClient(authToken);
+  // Check if there's already a sync in progress for this user
+  if (pendingSyncs.has(id)) {
+    debugLog(`Sync already in progress for user ${id.substring(0, 8)}..., reusing promise`);
+    return pendingSyncs.get(id)!;
+  }
   
-  if (authToken) {
+  // Create a new sync promise
+  const syncPromise = syncUserWithSupabaseInternal(id, email, fullName, avatarUrl, authToken);
+  
+  // Store the promise in the map
+  pendingSyncs.set(id, syncPromise);
+  
+  // When the promise resolves, remove it from the map
+  syncPromise.then(
+    () => pendingSyncs.delete(id),
+    () => pendingSyncs.delete(id)
+  );
+  
+  return syncPromise;
+}
+
+// Internal implementation of user sync
+async function syncUserWithSupabaseInternal(
+  id: string,
+  email: string,
+  fullName?: string | null,
+  avatarUrl?: string | null,
+  token?: string | null
+): Promise<User | null> {
+  // Get the appropriate client based on token availability
+  const client = getSupabaseClient(token);
+  
+  if (token) {
     debugLog("Using authenticated client for user sync");
-    logTokenInfo(authToken);
+    logTokenInfo(token);
   } else {
     debugLog("Using anonymous client for user sync (no token provided)");
   }

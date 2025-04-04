@@ -21,6 +21,8 @@ const MAX_TOKEN_RETRIES = 3;
 const TOKEN_REFRESH_THRESHOLD = 50 * 60 * 1000;
 // Global flag to prevent multiple hook instances from syncing simultaneously
 let GLOBAL_SYNC_IN_PROGRESS = false;
+// Global flag to track if user is fully synced with Supabase
+let USER_SYNCED_WITH_SUPABASE = false;
 
 /**
  * Token cache to reduce redundant token fetching
@@ -113,6 +115,7 @@ export function useSupabaseAuth() {
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [canVote, setCanVote] = useState(false);
   const [tokenVerified, setTokenVerified] = useState(false);
+  const [isSyncedWithSupabase, setIsSyncedWithSupabase] = useState(USER_SYNCED_WITH_SUPABASE);
   
   // Add a ref to track if sync is in progress to prevent loops
   const syncInProgress = useRef(false);
@@ -288,6 +291,8 @@ export function useSupabaseAuth() {
             if (syncedUser && isMounted.current) {
               console.log("Successfully synced user with Supabase:", syncedUser);
               setSupabaseUser(syncedUser);
+              setIsSyncedWithSupabase(true);
+              USER_SYNCED_WITH_SUPABASE = true;
             } else {
               console.warn("User sync returned no data");
             }
@@ -451,6 +456,7 @@ export function useSupabaseAuth() {
     error,
     refreshAuth,
     authToken: authToken.current,
-    getCurrentAuthToken
+    getCurrentAuthToken,
+    isSyncedWithSupabase
   };
 } 

@@ -9,13 +9,28 @@ import * as suggestedRequestsService from '@/services/suggestedRequests';
 import * as usersService from '@/services/users';
 import { useState, useRef, useEffect } from 'react';
 
-// Debug mode toggle - set to true to enable detailed logging
-const DEBUG_MODE = true;
+// Debug mode toggle - only in development
+const DEBUG_MODE = process.env.NODE_ENV === 'development';
 
-// Debug logger function that only logs when debug mode is enabled
+// Debugging utility
 function debugLog(message: string, ...args: any[]) {
   if (DEBUG_MODE) {
     console.log(`DEBUG: ${message}`, ...args);
+  }
+}
+
+// Also add a throttled debug logger for high-frequency events
+const throttledDebugLogs = new Map<string, number>();
+function throttledDebugLog(key: string, message: string, ...args: any[]) {
+  if (!DEBUG_MODE) return;
+  
+  const now = Date.now();
+  const lastTime = throttledDebugLogs.get(key) || 0;
+  const MIN_LOG_INTERVAL = 5000; // 5 seconds
+  
+  if (now - lastTime > MIN_LOG_INTERVAL) {
+    console.log(`DEBUG: ${message}`, ...args);
+    throttledDebugLogs.set(key, now);
   }
 }
 
@@ -113,7 +128,7 @@ export function useCastVote() {
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
   const { user } = useUser();
-  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
+  const { supabaseUser, getCurrentAuthToken, isSyncedWithSupabase } = useSupabaseAuth();
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
@@ -127,7 +142,7 @@ export function useCastVote() {
     }) => {
       // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
       let userId = supabaseUser?.id || user?.id;
-      const isSynced = !!supabaseUser?.id;
+      const isSynced = !!supabaseUser?.id || isSyncedWithSupabase;
       
       if (!userId) {
         throw new Error('User not authenticated. Please sign in to vote.');
@@ -219,7 +234,7 @@ export function useRemoveVote() {
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
   const { user } = useUser();
-  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
+  const { supabaseUser, getCurrentAuthToken, isSyncedWithSupabase } = useSupabaseAuth();
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
@@ -227,7 +242,7 @@ export function useRemoveVote() {
     mutationFn: async ({ requestId }: { requestId: string }) => {
       // Get user ID - prefer Supabase user ID if available, otherwise use Clerk ID
       let userId = supabaseUser?.id || user?.id;
-      const isSynced = !!supabaseUser?.id;
+      const isSynced = !!supabaseUser?.id || isSyncedWithSupabase;
       
       if (!userId) {
         throw new Error('User not authenticated. Please sign in to remove your vote.');
@@ -318,7 +333,7 @@ export function useRemoveVote() {
 export function useUserVote(requestId: string) {
   const { isSignedIn, getToken } = useAuth();
   const { user } = useUser();
-  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
+  const { supabaseUser, getCurrentAuthToken, isSyncedWithSupabase } = useSupabaseAuth();
   const [authAttempts, setAuthAttempts] = useState(0);
   const queryClient = useQueryClient();
   const MAX_AUTH_ATTEMPTS = 2;
@@ -326,7 +341,7 @@ export function useUserVote(requestId: string) {
   
   // Get effective user ID, prefer Supabase user ID
   const effectiveUserId = supabaseUser?.id || user?.id || 'none';
-  const isSynced = !!supabaseUser?.id;
+  const isSynced = !!supabaseUser?.id || isSyncedWithSupabase;
   
   // Only log initialization once per mount
   useEffect(() => {
@@ -375,11 +390,13 @@ export function useUserVote(requestId: string) {
       }
       
       // Handle case where user is not synced with Supabase yet
+      // Only trigger sync if we haven't synced globally yet
       if (isSignedIn && user && !isSynced && token && user.primaryEmailAddress?.emailAddress) {
         try {
           debugLog("User not synced with Supabase yet, syncing before vote query");
           
-          // Sync the user
+          // Check if another component might be syncing already
+          // Use a single sync attempt per 2 seconds window
           const { syncUserWithSupabase } = await import('@/services/users');
           await syncUserWithSupabase(
             user.id,
@@ -442,7 +459,11 @@ export function useUserVote(requestId: string) {
     enabled: !!isSignedIn && !!user && !!requestId && effectiveUserId !== 'none',
     // Short stale time because votes might change frequently
     staleTime: 30000,
-    retry: false // We handle retries manually
+    retry: false, // We handle retries manually
+    // Add refetch interval to reduce redundant calls
+    refetchInterval: false,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false
   });
   
   return {
