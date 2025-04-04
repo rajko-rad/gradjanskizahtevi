@@ -3,7 +3,7 @@ export const categories = [
   {
     id: "media",
     title: "Mediji",
-    shortTitle: "MED",
+    shortTitle: "Mediji",
     description: "Zahtevi vezani za medije i slobodu informisanja",
     count: 2,
     resources: [
@@ -14,7 +14,7 @@ export const categories = [
   {
     id: "elections",
     title: "Izborni uslovi",
-    shortTitle: "IZB",
+    shortTitle: "Izbori",
     description: "Zahtevi za unapređenje i čišćenje biračkih spiskova",
     count: 1,
     resources: [
@@ -25,7 +25,7 @@ export const categories = [
   {
     id: "security",
     title: "Službe Bezbednosti",
-    shortTitle: "BEZ",
+    shortTitle: "Bezbednost",
     description: "Zahtevi vezani za reforme službi bezbednosti",
     count: 1,
     resources: [
@@ -36,7 +36,7 @@ export const categories = [
   {
     id: "judiciary",
     title: "Pravosuđe",
-    shortTitle: "PRA",
+    shortTitle: "Pravosuđe",
     description: "Zahtevi za reformu pravosuđa",
     count: 1,
     resources: [
@@ -47,7 +47,7 @@ export const categories = [
   {
     id: "government",
     title: "Prelazna Vlada i Opozicija",
-    shortTitle: "VLA",
+    shortTitle: "Vlada",
     description: "Predlozi za formiranje prelazne vlade i opoziciono delovanje",
     count: 4,
     resources: [
