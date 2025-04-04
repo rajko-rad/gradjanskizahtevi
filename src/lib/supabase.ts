@@ -23,7 +23,7 @@ export function getAuthClient(authToken: string | null) {
     return supabase;
   }
 
-  // Create a new auth client or reuse the existing one
+  // Create a new auth client only if it doesn't exist yet
   if (!authClientInstance) {
     authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
       global: {
@@ -33,9 +33,21 @@ export function getAuthClient(authToken: string | null) {
       }
     });
     console.log('Created new authenticated Supabase client');
-  } else {
-    // For existing clients, recreate with the new token
-    // This is more reliable than trying to update headers directly
+    return authClientInstance;
+  } 
+  
+  // For existing clients, use the auth.setSession method instead of recreating the client
+  // This avoids the "Multiple GoTrueClient instances" warning
+  try {
+    // Set the auth header for subsequent requests
+    authClientInstance.auth.setSession({
+      access_token: authToken,
+      refresh_token: '',
+    });
+    console.log('Updated existing authenticated Supabase client with new token');
+  } catch (error) {
+    console.error('Error updating auth token on existing client:', error);
+    // If updating fails, recreate the client as a fallback
     authClientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
       global: {
         headers: {
@@ -43,7 +55,7 @@ export function getAuthClient(authToken: string | null) {
         }
       }
     });
-    console.log('Updated authenticated Supabase client with new token');
+    console.log('Recreated authenticated Supabase client after error');
   }
 
   return authClientInstance;
@@ -80,15 +92,52 @@ export function createAuthClient(authToken: string) {
  */
 export async function setSupabaseToken(token: string | null) {
   if (token) {
-    console.log('Setting Supabase token:', token.substring(0, 10) + '...');
-    supabase.auth.setSession({
-      access_token: token,
-      refresh_token: '',
-    });
-    console.log('Supabase token set successfully');
+    try {
+      console.log('Setting Supabase token:', token.substring(0, 10) + '...');
+      
+      // Add debugging to check token validity
+      try {
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+          console.warn('Warning: JWT token does not have the expected format (header.payload.signature)');
+        } else {
+          const payload = JSON.parse(atob(parts[1]));
+          console.log('Token contains required claims:', {
+            sub: !!payload.sub,
+            aud: payload.aud,
+            role: payload.role,
+            exp: new Date(payload.exp * 1000).toISOString()
+          });
+        }
+      } catch (parseError) {
+        console.error('Error parsing JWT token:', parseError);
+      }
+      
+      // Set the authentication session for the anonymous client
+      await supabase.auth.setSession({
+        access_token: token,
+        refresh_token: '',
+      });
+      
+      // Clear any existing authenticated client to ensure we create a fresh one
+      // This prevents stale auth state
+      if (authClientInstance) {
+        clearAuthClient();
+      }
+      
+      console.log('Supabase token set successfully');
+    } catch (error) {
+      console.error('Error setting Supabase token:', error);
+      throw error;
+    }
   } else {
     // If the token is null, the user has signed out
     console.log('Clearing Supabase token (user signed out)');
-    supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+      clearAuthClient();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
   }
 } 

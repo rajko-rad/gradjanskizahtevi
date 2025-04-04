@@ -13,7 +13,13 @@ export async function castVote(
   optionId?: string | null,
   authToken?: string | null
 ): Promise<Vote> {
-  console.log("Casting vote with params:", { userId, requestId, value, optionId });
+  console.log("Casting vote with params:", { 
+    userId, 
+    requestId, 
+    value, 
+    optionId, 
+    hasToken: !!authToken 
+  });
   
   if (!requestId) {
     console.error("Invalid requestId provided to castVote:", requestId);
@@ -25,38 +31,45 @@ export async function castVote(
     throw new Error("User not authenticated");
   }
 
+  if (!authToken) {
+    console.error("Missing auth token for castVote - authentication required");
+    throw new Error("Authentication required for voting");
+  }
+
   // Get the authenticated client - this is crucial for RLS policies to work
   try {
     const client = getAuthClient(authToken);
     
     // Verify authentication
-    if (authToken) {
-      const { data: authData, error: sessionError } = await client.auth.getSession();
-      
-      if (sessionError || !authData.session) {
-        console.error("Authentication error in castVote:", sessionError);
-        throw new Error("User not authenticated in Supabase");
-      }
-      
-      console.log("User authenticated in Supabase, proceeding with vote");
-    } else {
-      console.warn("No auth token provided for voting - RLS policies may block this operation");
+    const { data: authData, error: sessionError } = await client.auth.getSession();
+    
+    if (sessionError || !authData.session) {
+      console.error("Authentication error in castVote:", sessionError || "No session found");
+      throw new Error("User not authenticated in Supabase");
     }
+    
+    console.log("User authenticated in Supabase, proceeding with vote");
 
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
-    const { data: userData, error: userError } = await client
-      .from('users')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
+    let effectiveUserId = userId;
+    try {
+      const { data: userData, error: userError } = await client
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (userError) {
-      console.error('Error finding Supabase user:', userError);
-      console.log('Will try to use the provided userId as is for voting');
+      if (userError) {
+        console.warn('Error finding Supabase user:', userError.message || userError);
+        console.log('Will try to use the provided userId as is for voting');
+      } else if (userData?.id) {
+        effectiveUserId = userData.id;
+        console.log("Using Supabase user ID:", effectiveUserId);
+      }
+    } catch (userQueryError) {
+      console.warn('Error during user lookup:', userQueryError);
+      // Continue with original userId
     }
-
-    // If user exists in the database, use their ID, otherwise use the provided ID
-    const effectiveUserId = userData?.id || userId;
     
     // Check if the user has already voted for this request
     const { data: existingVote, error: existingVoteError } = await client
@@ -67,6 +80,14 @@ export async function castVote(
       .maybeSingle();
 
     if (existingVoteError) {
+      // Handle JWT/auth errors specifically
+      if (existingVoteError.code === 'PGRST301' || 
+          existingVoteError.message?.includes('JWT') || 
+          existingVoteError.message?.includes('auth')) {
+        console.error('Authentication error checking for existing vote:', existingVoteError.message);
+        throw new Error('Authentication error: Please sign in again');
+      }
+      
       console.error('Error checking for existing vote:', existingVoteError);
       console.error('Query parameters:', { userId: effectiveUserId, requestId });
       throw new Error('Failed to check for existing vote');
@@ -88,7 +109,7 @@ export async function castVote(
 
       if (updateError) {
         console.error('Error updating vote:', updateError);
-        throw new Error('Failed to update vote');
+        throw new Error('Failed to update vote: ' + updateError.message);
       }
 
       return updatedVote;
@@ -108,7 +129,7 @@ export async function castVote(
 
       if (insertError) {
         console.error('Error casting vote:', insertError);
-        throw new Error('Failed to cast vote');
+        throw new Error('Failed to cast vote: ' + insertError.message);
       }
 
       return newVote;
@@ -127,25 +148,50 @@ export async function removeVote(
   requestId: string,
   authToken?: string | null
 ): Promise<void> {
+  if (!userId || !requestId) {
+    console.error("Missing required parameters for removeVote:", { userId, requestId });
+    throw new Error("Invalid parameters");
+  }
+
+  if (!authToken) {
+    console.error("Missing auth token for removeVote - authentication required");
+    throw new Error("Authentication required for removing votes");
+  }
+
   // Use the authenticated client if a token is provided
-  const client = authToken ? getAuthClient(authToken) : supabase;
+  const client = getAuthClient(authToken);
   
   try {
-    // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
-    const { data: userData, error: userError } = await client
-      .from('users')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (userError) {
-      console.error('Error finding Supabase user:', userError);
-      console.log('Will try to use the provided userId as is for removing vote');
+    // Verify authentication
+    const { data: authData, error: sessionError } = await client.auth.getSession();
+    
+    if (sessionError || !authData.session) {
+      console.error("Authentication error in removeVote:", sessionError || "No session found");
+      throw new Error("User not authenticated in Supabase");
     }
 
-    // If user exists in the database, use their ID, otherwise use the provided ID
-    const effectiveUserId = userData?.id || userId;
+    // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
+    let effectiveUserId = userId;
+    try {
+      const { data: userData, error: userError } = await client
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
 
+      if (userError) {
+        console.warn('Error finding Supabase user:', userError.message || userError);
+        console.log('Will try to use the provided userId as is for removing vote');
+      } else if (userData?.id) {
+        effectiveUserId = userData.id;
+        console.log("Using Supabase user ID for vote removal:", effectiveUserId);
+      }
+    } catch (userQueryError) {
+      console.warn('Error during user lookup:', userQueryError);
+      // Continue with original userId
+    }
+
+    console.log("Removing vote with params:", { effectiveUserId, requestId, originalUserId: userId });
     const { error } = await client
       .from('votes')
       .delete()
@@ -153,12 +199,19 @@ export async function removeVote(
       .eq('request_id', requestId);
 
     if (error) {
+      if (error.code === 'PGRST301' || 
+          error.message?.includes('JWT') || 
+          error.message?.includes('auth')) {
+        console.error('Authentication error removing vote:', error.message);
+        throw new Error('Authentication error: Please sign in again');
+      }
+      
       console.error('Error removing vote:', error);
-      throw new Error('Failed to remove vote');
+      throw new Error('Failed to remove vote: ' + error.message);
     }
   } catch (error) {
     console.error('Unexpected error in removeVote:', error);
-    throw new Error('Failed to remove vote');
+    throw error;
   }
 }
 
@@ -170,25 +223,45 @@ export async function getUserVote(
   requestId: string,
   authToken?: string | null
 ): Promise<Vote | null> {
+  if (!userId || !requestId) {
+    console.warn('Missing required parameters for getUserVote:', { userId, requestId });
+    return null;
+  }
+
   // Use the authenticated client if a token is provided
   const client = authToken ? getAuthClient(authToken) : supabase;
+  const isAuthenticated = !!authToken;
   
   try {
     // Get the user from Supabase first to handle Clerk-to-Supabase ID mapping
     // This is necessary because Clerk IDs don't match the UUID format expected by Supabase
-    const { data: userData, error: userError } = await client
-      .from('users')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
+    let effectiveUserId = userId;
+    
+    try {
+      const { data: userData, error: userError } = await client
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (userError) {
-      console.error('Error finding Supabase user:', userError);
-      console.log('Will try the query anyway with the provided userId');
+      if (userError) {
+        console.warn('Error finding Supabase user:', userError?.message || userError);
+        console.log('Will try the query anyway with the provided userId');
+      } else if (userData?.id) {
+        effectiveUserId = userData.id;
+      }
+    } catch (error) {
+      console.warn('Error during user lookup:', error);
+      // Continue with original userId
     }
 
-    // If user exists in the database, use their ID, otherwise use the provided ID
-    const effectiveUserId = userData?.id || userId;
+    // Log query parameters
+    console.log('Querying votes with:', { 
+      effectiveUserId, 
+      requestId, 
+      originalUserId: userId,
+      isAuthenticated 
+    });
 
     const { data, error } = await client
       .from('votes')
@@ -198,14 +271,20 @@ export async function getUserVote(
       .maybeSingle();
 
     if (error) {
+      if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
+        console.warn('Authentication error fetching user vote:', error.message);
+        // Return null instead of throwing for auth errors
+        return null;
+      }
       console.error('Error fetching user vote:', error);
-      throw new Error('Failed to fetch user vote');
+      throw new Error(`Failed to fetch user vote: ${error.message}`);
     }
 
     return data;
   } catch (error) {
     console.error('Unexpected error in getUserVote:', error);
-    throw new Error('Failed to fetch user vote');
+    // Don't throw to prevent UI breaking, just return null
+    return null;
   }
 }
 

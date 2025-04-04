@@ -7,6 +7,7 @@ import * as votesService from '@/services/votes';
 import * as commentsService from '@/services/comments';
 import * as suggestedRequestsService from '@/services/suggestedRequests';
 import * as usersService from '@/services/users';
+import { useState } from 'react';
 
 // ---------------------- Categories Queries ----------------------
 
@@ -77,8 +78,22 @@ export function useRequestById(id: string) {
 export function useVoteStats(requestId: string) {
   return useQuery({
     queryKey: ['votes', 'stats', requestId],
-    queryFn: () => requestsService.getVoteCounts(requestId),
+    queryFn: async () => {
+      if (!requestId) {
+        console.warn('Missing requestId for useVoteStats');
+        return { total: 0, breakdown: {} };
+      }
+      
+      try {
+        return await votesService.getVoteStats(requestId);
+      } catch (error) {
+        console.error('Error fetching vote stats:', error);
+        // Return empty stats instead of throwing to prevent UI breakage
+        return { total: 0, breakdown: {} };
+      }
+    },
     enabled: !!requestId,
+    staleTime: 30000, // Cache for 30 seconds
   });
 }
 
@@ -87,6 +102,8 @@ export function useVoteStats(requestId: string) {
 export function useCastVote() {
   const queryClient = useQueryClient();
   const { supabaseUser, authToken, tokenVerified, refreshAuth } = useSupabaseAuth();
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 2;
 
   return useMutation({
     mutationFn: async ({ 
@@ -99,20 +116,50 @@ export function useCastVote() {
       optionId?: string | null;
     }) => {
       // If we don't have a verified token, try to refresh auth once
-      if (!tokenVerified) {
-        console.log("Token not verified, attempting to refresh auth before voting");
-        await refreshAuth();
+      if (!tokenVerified && retryCount < MAX_RETRIES) {
+        console.log("Token not verified, attempting to refresh auth before voting (attempt", retryCount + 1, ")");
+        try {
+          await refreshAuth();
+          setRetryCount(count => count + 1);
+        } catch (refreshError) {
+          console.error("Failed to refresh auth before voting:", refreshError);
+          // Continue to attempt the vote anyway
+        }
       }
       
       if (!supabaseUser?.id) {
-        throw new Error('User not authenticated in Supabase');
+        console.error("Cannot cast vote: User not authenticated in Supabase");
+        throw new Error('User not authenticated. Please sign in to vote.');
       }
       
       if (!authToken) {
-        throw new Error('Missing authentication token for Supabase');
+        console.error("Cannot cast vote: Missing authentication token");
+        throw new Error('Authentication error. Please try signing out and in again.');
       }
       
-      return votesService.castVote(supabaseUser.id, requestId, value, optionId, authToken);
+      try {
+        const result = await votesService.castVote(supabaseUser.id, requestId, value, optionId, authToken);
+        // Reset retry count on success
+        if (retryCount > 0) {
+          setRetryCount(0);
+        }
+        return result;
+      } catch (error) {
+        // Format user-friendly error message
+        let errorMessage = 'Failed to cast vote';
+        if (error instanceof Error) {
+          if (error.message.includes('authenticated') || error.message.includes('auth')) {
+            errorMessage = 'Authentication error. Please sign in again.';
+          } else if (error.message.includes('permission')) {
+            errorMessage = 'Permission denied. You may not have access to vote.';
+          } else {
+            errorMessage = error.message;
+          }
+        }
+        
+        // Rethrow with user-friendly message
+        throw new Error(errorMessage);
+      }
     },
     onSuccess: (_, variables) => {
       // Invalidate relevant queries
@@ -130,24 +177,55 @@ export function useCastVote() {
 export function useRemoveVote() {
   const queryClient = useQueryClient();
   const { supabaseUser, authToken, tokenVerified, refreshAuth } = useSupabaseAuth();
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 2;
 
   return useMutation({
     mutationFn: async ({ requestId }: { requestId: string }) => {
       // If we don't have a verified token, try to refresh auth once
-      if (!tokenVerified) {
-        console.log("Token not verified, attempting to refresh auth before removing vote");
-        await refreshAuth();
+      if (!tokenVerified && retryCount < MAX_RETRIES) {
+        console.log("Token not verified, attempting to refresh auth before removing vote (attempt", retryCount + 1, ")");
+        try {
+          await refreshAuth();
+          setRetryCount(count => count + 1);
+        } catch (refreshError) {
+          console.error("Failed to refresh auth before removing vote:", refreshError);
+          // Continue to attempt the vote removal anyway
+        }
       }
       
       if (!supabaseUser?.id) {
-        throw new Error('User not authenticated in Supabase');
+        console.error("Cannot remove vote: User not authenticated in Supabase");
+        throw new Error('User not authenticated. Please sign in to remove your vote.');
       }
       
       if (!authToken) {
-        throw new Error('Missing authentication token for Supabase');
+        console.error("Cannot remove vote: Missing authentication token");
+        throw new Error('Authentication error. Please try signing out and in again.');
       }
       
-      return votesService.removeVote(supabaseUser.id, requestId, authToken);
+      try {
+        await votesService.removeVote(supabaseUser.id, requestId, authToken);
+        // Reset retry count on success
+        if (retryCount > 0) {
+          setRetryCount(0);
+        }
+      } catch (error) {
+        // Format user-friendly error message
+        let errorMessage = 'Failed to remove vote';
+        if (error instanceof Error) {
+          if (error.message.includes('authenticated') || error.message.includes('auth')) {
+            errorMessage = 'Authentication error. Please sign in again.';
+          } else if (error.message.includes('permission')) {
+            errorMessage = 'Permission denied. You may not have access to remove this vote.';
+          } else {
+            errorMessage = error.message;
+          }
+        }
+        
+        // Rethrow with user-friendly message
+        throw new Error(errorMessage);
+      }
     },
     onSuccess: (_, variables) => {
       // Invalidate relevant queries
@@ -163,15 +241,16 @@ export function useRemoveVote() {
 }
 
 export function useUserVote(requestId: string) {
-  const { supabaseUser, authToken } = useSupabaseAuth();
+  const { supabaseUser, authToken, refreshAuth, tokenVerified } = useSupabaseAuth();
   const { user } = useUser();
+  const [lastErrorCount, setLastErrorCount] = useState(0);
   
   // Use the Supabase user ID if available, otherwise fall back to Clerk user ID
   const effectiveUserId = supabaseUser?.id || user?.id;
 
   return useQuery({
     queryKey: ['votes', 'user', effectiveUserId, requestId],
-    queryFn: () => {
+    queryFn: async () => {
       if (!effectiveUserId) return null;
       
       // For debugging
@@ -180,12 +259,53 @@ export function useUserVote(requestId: string) {
         clerkUserId: user?.id,
         supabaseUser: supabaseUser?.id,
         requestId,
-        authToken: authToken ? 'present' : 'missing'
+        authToken: authToken ? 'present' : 'missing',
+        tokenVerified
       });
       
-      return votesService.getUserVote(effectiveUserId, requestId, authToken);
+      // If we have a user but no auth token or unverified token, try to refresh auth once
+      if (effectiveUserId && (!authToken || !tokenVerified) && lastErrorCount === 0) {
+        console.log("Auth token missing or unverified, attempting to refresh before fetching votes");
+        try {
+          await refreshAuth();
+          // Continue with the fetch even if refresh didn't work, we'll fall back to anonymous views
+        } catch (e) {
+          console.error("Auth refresh failed:", e);
+        }
+      }
+      
+      try {
+        const result = await votesService.getUserVote(effectiveUserId, requestId, authToken);
+        // Reset error count on success
+        if (lastErrorCount > 0) {
+          setLastErrorCount(0);
+        }
+        return result;
+      } catch (error) {
+        console.error("Error fetching user vote:", error);
+        
+        // Increment error count to prevent infinite refresh loops
+        setLastErrorCount(prev => prev + 1);
+        
+        // For certain errors, try to refresh auth
+        if (lastErrorCount < 2 && error instanceof Error && 
+           (error.message.includes('auth') || error.message.includes('JWT') || error.message.includes('token'))) {
+          console.log("Auth-related error detected, attempting to refresh auth");
+          try {
+            await refreshAuth();
+          } catch (e) {
+            console.error("Auth refresh failed:", e);
+          }
+        }
+        
+        // Return null instead of throwing to prevent UI breakage
+        return null;
+      }
     },
     enabled: !!effectiveUserId && !!requestId,
+    retry: false, // Disable automatic retries
+    retryOnMount: false, // Don't retry on component mount
+    staleTime: 30000, // Cache results for 30 seconds
   });
 }
 
