@@ -16,7 +16,44 @@ export async function syncUserWithSupabase(
   console.log("Syncing user with Supabase:", { id, email });
   
   try {
-    // Check if the user already exists
+    // First check if a user with this email already exists (regardless of ID)
+    const { data: existingUserByEmail, error: emailCheckError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+    
+    if (emailCheckError && emailCheckError.code !== 'PGRST116') {
+      console.error('Error checking for existing user by email:', emailCheckError);
+      // Continue despite error
+    }
+    
+    // If user exists with this email but different ID, update their ID
+    if (existingUserByEmail && existingUserByEmail.id !== id) {
+      console.log('Found existing user with same email but different ID. Updating ID:', existingUserByEmail.id, 'to', id);
+      
+      const { data: updateResult, error: updateError } = await supabase
+        .from('users')
+        .update({
+          id,
+          full_name: fullName || existingUserByEmail.full_name,
+          avatar_url: avatarUrl || existingUserByEmail.avatar_url,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingUserByEmail.id)
+        .select()
+        .single();
+      
+      if (updateError) {
+        console.error('Error updating existing user ID:', updateError);
+        // Proceed to try other methods instead of throwing
+      } else if (updateResult) {
+        console.log('Successfully updated user ID');
+        return updateResult;
+      }
+    }
+    
+    // Check if the user already exists with correct ID
     const { data: existingUser, error: fetchError } = await supabase
       .from('users')
       .select('*')
@@ -25,7 +62,7 @@ export async function syncUserWithSupabase(
     
     if (fetchError && fetchError.code !== 'PGRST116') {
       // PGRST116 means no rows returned, which is fine for a new user
-      console.error('Error checking for existing user:', fetchError);
+      console.error('Error checking for existing user by ID:', fetchError);
       console.log('Will try to create/update the user anyway');
       // Don't throw here - continue to try to create/update the user
     }
@@ -57,7 +94,6 @@ export async function syncUserWithSupabase(
       // Create a new user
       console.log("Creating new user:", id);
       
-      // If the Clerk ID isn't a valid UUID, it's fine now since we've updated the schema to use TEXT
       try {
         const { data, error } = await supabase
           .from('users')
@@ -85,7 +121,44 @@ export async function syncUserWithSupabase(
               
             if (refetchError) {
               console.error('Error re-fetching user after insert failed:', refetchError);
-              throw new Error('Failed to create user and could not retrieve existing user');
+              
+              // Try one more time to fetch by email instead
+              console.log('Trying to fetch by email as a last resort...');
+              const { data: userByEmail, error: emailError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', email)
+                .single();
+                
+              if (emailError) {
+                console.error('All attempts to retrieve user failed:', emailError);
+                throw new Error('Failed to create user and could not retrieve existing user');
+              }
+              
+              // If we found a user with this email but different ID, we need to update it
+              if (userByEmail && userByEmail.id !== id) {
+                console.log('Found user by email with different ID. Attempting final ID update...');
+                const { data: finalUpdate, error: finalError } = await supabase
+                  .from('users')
+                  .update({
+                    id,
+                    full_name: fullName || userByEmail.full_name,
+                    avatar_url: avatarUrl || userByEmail.avatar_url,
+                    updated_at: now
+                  })
+                  .eq('id', userByEmail.id)
+                  .select()
+                  .single();
+                  
+                if (finalError) {
+                  console.error('Final update attempt failed:', finalError);
+                  throw new Error('All attempts to sync user failed');
+                }
+                
+                return finalUpdate;
+              }
+              
+              return userByEmail;
             }
             
             return refetchedUser;
