@@ -1,10 +1,9 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { SuggestRequestForm } from "./SuggestRequestForm";
 import { SuggestedRequestCard } from "./SuggestedRequestCard";
-import { suggestedRequests } from "@/data/mockData";
 import { Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -15,6 +14,17 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface SuggestedRequest {
+  id: string;
+  title: string;
+  description: string;
+  author: string;
+  timestamp: string;
+  votes: number;
+}
 
 interface SuggestedRequestsSectionProps {
   categoryId: string;
@@ -24,18 +34,74 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [suggestedRequests, setSuggestedRequests] = useState<SuggestedRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
   
-  const filteredRequests = suggestedRequests.filter(request => request.categoryId === categoryId);
   const itemsPerPage = 5;
-  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+  const totalPages = Math.ceil(suggestedRequests.length / itemsPerPage);
   
   // Get current items
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredRequests.slice(indexOfFirstItem, indexOfLastItem);
+  const currentItems = suggestedRequests.slice(indexOfFirstItem, indexOfLastItem);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [categoryId]);
+
+  async function fetchRequests() {
+    setIsLoading(true);
+    try {
+      // Fetch requests from Supabase
+      const { data, error } = await supabase
+        .from('requests')
+        .select(`
+          id,
+          title,
+          description,
+          created_at,
+          profiles:user_id(username, full_name),
+          votes:votes(count)
+        `)
+        .eq('category_id', categoryId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Error fetching requests:", error);
+        toast({
+          title: "Greška",
+          description: "Nije moguće učitati predloge zahteva.",
+          variant: "destructive"
+        });
+      } else {
+        // Format the data for our component
+        const formattedData = data.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          author: item.profiles?.full_name || item.profiles?.username || "Anonimni korisnik",
+          timestamp: new Date(item.created_at).toLocaleDateString('sr-RS', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+          }),
+          votes: item.votes?.length || 0
+        }));
+        
+        setSuggestedRequests(formattedData);
+      }
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   const handleSuccess = () => {
     setShowForm(false);
+    fetchRequests();
   };
 
   // Handle pagination
@@ -51,11 +117,11 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
     <div className="mt-6 pt-2">
       <div className="flex justify-between items-center mb-2">
         <h3 className="text-sm font-medium text-gray-600">
-          Predlozi građana ({filteredRequests.length})
+          Predlozi građana ({suggestedRequests.length})
         </h3>
         
         <div className="flex items-center gap-2">
-          {filteredRequests.length > 5 && (
+          {suggestedRequests.length > 5 && (
             <Button 
               variant="ghost" 
               size="sm" 
@@ -93,7 +159,11 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
         </div>
       </div>
       
-      {filteredRequests.length > 0 ? (
+      {isLoading ? (
+        <div className="text-center py-3 bg-gray-50 rounded-md">
+          <p className="text-xs text-gray-500">Učitavanje predloga...</p>
+        </div>
+      ) : suggestedRequests.length > 0 ? (
         <div className="border rounded-md bg-white">
           <ScrollArea className={expanded ? "max-h-[400px]" : ""}>
             <div>

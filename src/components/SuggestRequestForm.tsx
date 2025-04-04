@@ -8,6 +8,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@clerk/clerk-react";
 
 const formSchema = z.object({
   title: z.string().min(5, { message: "Naslov mora imati najmanje 5 karaktera" }),
@@ -24,6 +26,7 @@ interface SuggestRequestFormProps {
 export function SuggestRequestForm({ categoryId, onSuccess }: SuggestRequestFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const { userId } = useAuth();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -33,23 +36,50 @@ export function SuggestRequestForm({ categoryId, onSuccess }: SuggestRequestForm
     }
   });
 
-  function onSubmit(data: FormValues) {
+  async function onSubmit(data: FormValues) {
     setIsSubmitting(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      toast({
-        title: "Zahtev poslat",
-        description: "Vaš predlog zahteva je uspešno poslat na razmatranje.",
-      });
-      
-      form.reset();
-      setIsSubmitting(false);
-      
-      if (onSuccess) {
-        onSuccess();
+    try {
+      // Add to Supabase
+      const { error } = await supabase
+        .from('requests')
+        .insert({
+          title: data.title,
+          description: data.description,
+          category_id: categoryId,
+          user_id: userId || null,
+          status: 'pending'
+        });
+
+      if (error) {
+        console.error("Error inserting request:", error);
+        toast({
+          title: "Greška",
+          description: "Došlo je do greške prilikom slanja zahteva. Pokušajte ponovo.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Zahtev poslat",
+          description: "Vaš predlog zahteva je uspešno poslat na razmatranje.",
+        });
+        
+        form.reset();
+        
+        if (onSuccess) {
+          onSuccess();
+        }
       }
-    }, 1000);
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        title: "Greška",
+        description: "Došlo je do neočekivane greške. Pokušajte ponovo.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (

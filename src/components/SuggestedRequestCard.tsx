@@ -1,10 +1,12 @@
 
-import React from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ThumbsUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@clerk/clerk-react";
 
 interface SuggestedRequestCardProps {
   id: string;
@@ -23,27 +25,100 @@ export function SuggestedRequestCard({
   timestamp, 
   votes 
 }: SuggestedRequestCardProps) {
-  const [voteCount, setVoteCount] = React.useState(votes);
-  const [hasVoted, setHasVoted] = React.useState(false);
+  const [voteCount, setVoteCount] = useState(votes);
+  const [hasVoted, setHasVoted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { userId, isSignedIn } = useAuth();
 
-  const handleVote = () => {
-    if (!hasVoted) {
-      setVoteCount(prev => prev + 1);
-      setHasVoted(true);
+  // Check if the current user has already voted
+  React.useEffect(() => {
+    if (userId) {
+      checkUserVote();
+    }
+  }, [userId, id]);
+
+  async function checkUserVote() {
+    if (!userId || !isSignedIn) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('votes')
+        .select('id')
+        .eq('request_id', id)
+        .eq('user_id', userId)
+        .maybeSingle();
       
+      if (data) {
+        setHasVoted(true);
+      }
+    } catch (error) {
+      console.error("Error checking vote:", error);
+    }
+  }
+
+  const handleVote = async () => {
+    if (!userId || !isSignedIn) {
       toast({
-        title: "Glas zabeležen",
-        description: "Hvala na vašem glasu za ovaj predlog zahteva."
+        title: "Potrebna prijava",
+        description: "Morate biti prijavljeni da biste glasali za predloge.",
+        variant: "destructive"
       });
-    } else {
-      setVoteCount(prev => prev - 1);
-      setHasVoted(false);
-      
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      if (!hasVoted) {
+        // Add vote
+        const { error } = await supabase
+          .from('votes')
+          .insert({
+            request_id: id,
+            user_id: userId
+          });
+
+        if (error) {
+          throw error;
+        }
+        
+        setVoteCount(prev => prev + 1);
+        setHasVoted(true);
+        
+        toast({
+          title: "Glas zabeležen",
+          description: "Hvala na vašem glasu za ovaj predlog zahteva."
+        });
+      } else {
+        // Remove vote
+        const { error } = await supabase
+          .from('votes')
+          .delete()
+          .eq('request_id', id)
+          .eq('user_id', userId);
+
+        if (error) {
+          throw error;
+        }
+        
+        setVoteCount(prev => prev - 1);
+        setHasVoted(false);
+        
+        toast({
+          title: "Glas povučen",
+          description: "Vaš glas za ovaj predlog zahteva je povučen."
+        });
+      }
+    } catch (error) {
+      console.error("Error voting:", error);
       toast({
-        title: "Glas povučen",
-        description: "Vaš glas za ovaj predlog zahteva je povučen."
+        title: "Greška",
+        description: "Došlo je do greške prilikom beleženja glasa.",
+        variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -64,8 +139,9 @@ export function SuggestedRequestCard({
               size="sm"
               className="h-7 px-2 text-xs"
               onClick={handleVote}
+              disabled={isLoading}
             >
-              {hasVoted ? "Povučeno" : "Podrži"}
+              {isLoading ? "..." : hasVoted ? "Povučeno" : "Podrži"}
             </Button>
           </div>
         </div>
@@ -75,7 +151,8 @@ export function SuggestedRequestCard({
           <h4 className="text-sm font-semibold">{title}</h4>
           <p className="text-xs text-gray-600">{description}</p>
           <div className="text-xs text-gray-500 pt-1">
-            Predloženo: {timestamp}
+            <div>Predložio: {author}</div>
+            <div>Predloženo: {timestamp}</div>
           </div>
         </div>
       </HoverCardContent>
