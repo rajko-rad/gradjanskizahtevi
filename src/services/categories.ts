@@ -1,4 +1,4 @@
-import { supabase, getSupabaseClient } from '@/lib/supabase';
+import { supabase, getAuthClient } from '@/lib/supabase';
 import type { Database } from '@/types/supabase';
 
 export type Category = Database['public']['Tables']['categories']['Row'];
@@ -166,7 +166,7 @@ export async function deleteResource(id: string): Promise<void> {
  */
 export async function getCategoryStats(categoryId: string): Promise<{ totalVotes: number, totalRequests: number }> {
   try {
-    const client = getSupabaseClient();
+    const client = getAuthClient(null);
 
     // Get total requests in this category
     const { count: requestCount, error: requestError } = await client

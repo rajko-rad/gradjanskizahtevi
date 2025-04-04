@@ -1,4 +1,4 @@
-import { supabase, getSupabaseClient } from '@/lib/supabase';
+import { supabase, getAuthClient } from '@/lib/supabase';
 import type { Database } from '@/types/supabase';
 
 // Request with additional properties
@@ -218,23 +218,30 @@ export async function deleteRequest(id: string): Promise<void> {
  * Get vote counts for a request
  */
 export async function getVoteCounts(requestId: string): Promise<{ [key: string]: number }> {
-  const { data: votes, error } = await supabase
-    .from('votes')
-    .select('value')
-    .eq('request_id', requestId);
-  
-  if (error) {
-    console.error(`Error fetching votes for request ${requestId}:`, error);
-    throw new Error(`Failed to fetch votes for request ${requestId}`);
-  }
+  try {
+    const client = getAuthClient(null);
 
-  // Count votes by value
-  const counts: { [key: string]: number } = {};
-  votes.forEach(vote => {
-    counts[vote.value] = (counts[vote.value] || 0) + 1;
-  });
-  
-  return counts;
+    const { data: votes, error } = await client
+      .from('votes')
+      .select('value')
+      .eq('request_id', requestId);
+    
+    if (error) {
+      console.error(`Error fetching votes for request ${requestId}:`, error);
+      throw new Error(`Failed to fetch votes for request ${requestId}`);
+    }
+
+    // Count votes by value
+    const counts: { [key: string]: number } = {};
+    votes.forEach(vote => {
+      counts[vote.value] = (counts[vote.value] || 0) + 1;
+    });
+    
+    return counts;
+  } catch (error) {
+    console.error("Failed to get vote counts:", error);
+    throw error;
+  }
 }
 
 /**
@@ -244,7 +251,7 @@ export async function getVoteCounts(requestId: string): Promise<{ [key: string]:
  */
 export async function getPopularRequests(limit: number = 10): Promise<ExtendedRequest[]> {
   try {
-    const client = getSupabaseClient();
+    const client = getAuthClient(null);
     
     const { data, error } = await client
       .from('requests')
@@ -273,7 +280,7 @@ export async function getPopularRequests(limit: number = 10): Promise<ExtendedRe
  */
 export async function getRecentRequests(limit: number = 10): Promise<ExtendedRequest[]> {
   try {
-    const client = getSupabaseClient();
+    const client = getAuthClient(null);
     
     const { data, error } = await client
       .from('requests')
