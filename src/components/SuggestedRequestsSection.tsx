@@ -75,7 +75,7 @@ export function SuggestedRequestsSection({ categoryId }: SuggestedRequestsSectio
           description: "Nije moguće učitati predloge zahteva.",
           variant: "destructive"
         });
-      } else {
+      } else if (data) {
         // Format the data for our component
         const formattedData = data.map(item => ({
           id: item.id,
