@@ -43,10 +43,18 @@ export function useSupabaseAuth() {
   const retryAttempts = useRef(0);
   // Track if the component is mounted
   const isMounted = useRef(true);
+  // Cache for user data
+  const userCache = useRef<{ [key: string]: User }>({});
 
   // Get a fresh token
   const getFreshToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
     try {
+      // Check if we have a valid cached token
+      if (!forceRefresh && authToken.current && !isTokenExpired(authToken.current)) {
+        debugLog("Using cached token");
+        return authToken.current;
+      }
+
       debugLog("Getting fresh token from Clerk");
       const token = await getToken({ template: 'supabase' });
       
@@ -92,6 +100,15 @@ export function useSupabaseAuth() {
         setSupabaseUser(null);
         setTokenVerified(false);
         authToken.current = null;
+        return;
+      }
+
+      // Check if we have cached user data
+      if (!forceRefresh && userCache.current[user.id]) {
+        debugLog("Using cached user data");
+        setSupabaseUser(userCache.current[user.id]);
+        setCanVote(true);
+        setTokenVerified(true);
         return;
       }
 
@@ -144,6 +161,8 @@ export function useSupabaseAuth() {
             
             if (syncedUser && isMounted.current) {
               console.log("Successfully synced user with Supabase:", syncedUser);
+              // Cache the user data
+              userCache.current[user.id] = syncedUser;
               setSupabaseUser(syncedUser);
               setCanVote(true);
             } else {

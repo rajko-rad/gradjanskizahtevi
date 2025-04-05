@@ -92,7 +92,7 @@ export function VoteCard({
 }: VoteCardProps) {
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
-  const { supabaseUser, refreshAuth } = useSupabaseAuth();
+  const { supabaseUser, refreshAuth, isLoading: isAuthLoading } = useSupabaseAuth();
   const [showComments, setShowComments] = useState(false);
   const [rangeValue, setRangeValue] = useState(min);
   const [isAuthRefreshing, setIsAuthRefreshing] = useState(false);
@@ -288,6 +288,7 @@ export function VoteCard({
 
   const renderVoteOptions = () => {
     const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote;
+    const isDisabled = isLoading || isAuthLoading || !isSignedIn;
 
     if (isLoading) {
       return (
@@ -312,7 +313,7 @@ export function VoteCard({
                 selectedOption === "yes" && "bg-green-100 border-green-300"
               )}
               variant="outline"
-              disabled={isLoading}
+              disabled={isDisabled}
             >
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -329,7 +330,7 @@ export function VoteCard({
                 selectedOption === "no" && "bg-red-100 border-red-300"
               )}
               variant="outline"
-              disabled={isLoading}
+              disabled={isDisabled}
             >
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -355,7 +356,7 @@ export function VoteCard({
                     selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
                   )}
                   variant="outline"
-                  disabled={isLoading}
+                  disabled={isDisabled}
                 >
                   <span>{option}</span>
                   <span className="flex items-center">
@@ -389,7 +390,7 @@ export function VoteCard({
               value={rangeValue}
               onChange={(e) => setRangeValue(parseInt(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-serbia-blue"
-              disabled={isLoading}
+              disabled={isDisabled}
             />
             <div className="mt-3 text-center">
               <span className="text-sm font-medium bg-serbia-blue/10 text-serbia-blue px-3 py-1 rounded-full">
@@ -400,7 +401,7 @@ export function VoteCard({
               onClick={handleRangeVote}
               className="w-full mt-6 bg-serbia-blue hover:bg-serbia-blue/90"
               variant="default"
-              disabled={isLoading}
+              disabled={isDisabled}
             >
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
