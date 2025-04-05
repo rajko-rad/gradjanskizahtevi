@@ -1,7 +1,16 @@
 import { getSupabaseClient } from '@/lib/clerk-supabase';
-import type { Database } from '@/types/supabase';
 
-export type TimelineEvent = Database['public']['Tables']['timeline_events']['Row'];
+// Define the TimelineEvent type based on the database schema
+export interface TimelineEvent {
+  id: string;
+  request_id?: string | null;
+  date: string;
+  title: string;
+  description: string;
+  source?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 /**
  * Fetch all timeline events
@@ -42,7 +51,7 @@ export async function getTimelineEventsForRequest(requestId: string): Promise<Ti
  * Create a new timeline event
  */
 export async function createTimelineEvent(
-  event: Database['public']['Tables']['timeline_events']['Insert']
+  event: Omit<TimelineEvent, 'id' | 'created_at' | 'updated_at'>
 ): Promise<TimelineEvent> {
   const { data, error } = await getSupabaseClient()
     .from('timeline_events')
@@ -63,7 +72,7 @@ export async function createTimelineEvent(
  */
 export async function updateTimelineEvent(
   id: string,
-  updates: Database['public']['Tables']['timeline_events']['Update']
+  updates: Partial<Omit<TimelineEvent, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<TimelineEvent> {
   const { data, error } = await getSupabaseClient()
     .from('timeline_events')

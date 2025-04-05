@@ -69,12 +69,20 @@ function AuthStatus({
   );
 }
 
+// Option interface from Supabase
+interface Option {
+  id: string;
+  request_id: string;
+  text: string;
+  created_at: string;
+}
+
 interface VoteCardProps {
   id: string;
   title: string;
   description?: string;
   type: "yesno" | "multiple" | "range";
-  options?: string[];
+  options?: Option[] | string[];
   min?: number;
   max?: number;
   hasComments?: boolean;
@@ -96,6 +104,16 @@ export function VoteCard({
   const [showComments, setShowComments] = useState(false);
   const [rangeValue, setRangeValue] = useState(min);
   const [isAuthRefreshing, setIsAuthRefreshing] = useState(false);
+
+  // Process options to normalize between string[] and Option[]
+  const processedOptions = options.map(option => {
+    if (typeof option === 'string') {
+      return option;
+    } else if (option && typeof option === 'object' && 'text' in option) {
+      return option.text;
+    }
+    return '';
+  }).filter(Boolean);
 
   // Fetch vote statistics
   const { 
@@ -345,7 +363,7 @@ export function VoteCard({
       case "multiple":
         return (
           <div className="flex flex-col gap-3 mt-6">
-            {options.map((option, index) => {
+            {processedOptions.map((option, index) => {
               const voteCount = voteStats?.[option] || 0;
               return (
                 <Button
