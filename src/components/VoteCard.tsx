@@ -430,10 +430,18 @@ export function VoteCard({
         .slice(0, 3)
         .filter(([, count]) => count > 0);
       
+      // Debug range votes
+      console.log(`[Debug Range ${id}] Range votes:`, {
+        totalVotes: rangeVotes,
+        distribution: rangeDistribution,
+        popularChoices: sortedChoices,
+        breakdown: voteStats?.breakdown
+      });
+      
       return (
         <div className="mt-4">
           {rangeVotes > 0 && (
-            <div className="bg-gray-50 p-3 rounded-lg mb-4">
+            <div className="bg-gray-50 p-3 rounded-lg mb-4 border border-gray-200">
               <p className="text-sm text-center text-gray-600 mb-2">Ukupno glasova: <span className="font-semibold">{rangeVotes}</span></p>
               
               {sortedChoices.length > 0 && (
@@ -707,10 +715,18 @@ export function VoteCard({
           .slice(0, 3)
           .filter(([, count]) => count > 0);
         
+        // Debug range votes
+        console.log(`[Debug Range ${id}] Range votes:`, {
+          totalVotes: rangeVotes,
+          distribution: rangeDistribution,
+          popularChoices: sortedChoices,
+          breakdown: voteStats?.breakdown
+        });
+        
         return (
           <div className="mt-4">
             {rangeVotes > 0 && (
-              <div className="bg-gray-50 p-3 rounded-lg mb-4">
+              <div className="bg-gray-50 p-3 rounded-lg mb-4 border border-gray-200">
                 <p className="text-sm text-center text-gray-600 mb-2">Ukupno glasova: <span className="font-semibold">{rangeVotes}</span></p>
                 
                 {sortedChoices.length > 0 && (
