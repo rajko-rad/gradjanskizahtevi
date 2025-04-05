@@ -70,11 +70,12 @@ export default function Admin() {
         }
 
         console.log('Admin check result:', data);
-        setIsAdmin(!!data);
+        const isUserAdmin = !!data;
+        setIsAdmin(isUserAdmin);
 
-        if (data) {
+        if (isUserAdmin) {
           console.log('User is an admin, proceeding to fetch data');
-          fetchData();
+          await fetchData();
         } else {
           console.log('User is not an admin');
         }
@@ -87,11 +88,6 @@ export default function Admin() {
   }, [user, isLoaded, navigate]);
 
   const fetchData = async () => {
-    if (!isAdmin) {
-      console.log('Not an admin, skipping data fetch');
-      return;
-    }
-
     try {
       console.log('Starting data fetch');
       setLoading(true);
