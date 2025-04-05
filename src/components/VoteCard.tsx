@@ -267,7 +267,7 @@ export function VoteCard({
 
     castVote({ 
       requestId: id, 
-      value: rangeValue
+      value: rangeValue.toString()
     }, {
       onSuccess: () => {
         toast({
@@ -418,16 +418,7 @@ export function VoteCard({
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>{title}</CardTitle>
-          {isSignedIn && (
-            <AuthStatus 
-              isSignedIn={isSignedIn}
-              isAuthRefreshing={isAuthRefreshing}
-              onRefresh={handleRefreshAuth}
-            />
-          )}
-        </div>
+        <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>
