@@ -1,16 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { syncUserWithSupabase, type User } from '@/services/users';
-import { getSupabaseClient, anonClient, logTokenInfo } from '@/lib/clerk-supabase';
-import clerkSupabase from '@/lib/clerk-supabase';
+import { getSupabaseClient, anonClient, logTokenInfo, isTokenExpired } from '@/lib/clerk-supabase';
 
-// Use the imported functions from the default export
-const { isTokenExpired, refreshToken } = clerkSupabase;
+// Debug mode toggle
+const DEBUG_MODE = process.env.NODE_ENV === 'development';
 
-// Debug mode toggle - set to true to enable detailed logging
-const DEBUG_MODE = true;
-
-// Debug logger function that only logs when debug mode is enabled
+// Debug logger function
 function debugLog(message: string, ...args: any[]) {
   if (DEBUG_MODE) {
     console.log(`DEBUG: ${message}`, ...args);
@@ -23,95 +19,6 @@ const MIN_SYNC_INTERVAL = 5000;
 const MAX_TOKEN_RETRIES = 3;
 // Token refresh threshold in milliseconds (50 minutes)
 const TOKEN_REFRESH_THRESHOLD = 50 * 60 * 1000;
-// Global flag to prevent multiple hook instances from syncing simultaneously
-let GLOBAL_SYNC_IN_PROGRESS = false;
-// Global flag to track if user is fully synced with Supabase
-let USER_SYNCED_WITH_SUPABASE = false;
-
-/**
- * Token cache to reduce redundant token fetching
- * This is separate from the hook to persist across hook instances
- */
-const tokenCache = {
-  token: null as string | null,
-  timestamp: 0,
-  isValid: () => {
-    // Token is valid if it exists and was fetched less than TOKEN_REFRESH_THRESHOLD ago
-    // Also check the token itself using isTokenExpired to catch short-lived tokens
-    return !!tokenCache.token && 
-      (Date.now() - tokenCache.timestamp < TOKEN_REFRESH_THRESHOLD) &&
-      !isTokenExpired(tokenCache.token);
-  },
-  set: (token: string | null) => {
-    tokenCache.token = token;
-    tokenCache.timestamp = token ? Date.now() : 0;
-    debugLog(token ? `Token cached (length: ${token.length})` : 'Token cache cleared');
-  },
-};
-
-// Update token handling to use clerk-supabase methods
-const setSupabaseToken = async (token: string | null) => {
-  debugLog("setSupabaseToken replacement called");
-  
-  // If the token is null, we're clearing the auth state
-  if (!token) {
-    debugLog("Clearing token (user signed out)");
-    tokenCache.set(null);
-    return;
-  }
-  
-  // Cache the token
-  tokenCache.set(token);
-  
-  // Just log token info, the token will be used directly by getSupabaseClient
-  logTokenInfo(token);
-};
-
-/**
- * Detect if the app is running on the client-side in a browser environment
- * Used to avoid attempting to access browser-only APIs during SSR
- */
-function isBrowser() {
-  return typeof window !== 'undefined';
-}
-
-/**
- * Try to load a cached token from localStorage if available
- * This helps reduce flashing of anonymous clients on page load
- */
-function tryLoadCachedToken() {
-  if (!isBrowser()) return null;
-  
-  try {
-    const cachedTokenData = localStorage.getItem('auth_token_cache');
-    if (!cachedTokenData) return null;
-    
-    const { token, timestamp, expiry } = JSON.parse(cachedTokenData);
-    
-    // Check if token is expired
-    const now = Date.now();
-    if (timestamp && expiry && now < expiry) {
-      // Also verify the token itself isn't expired
-      if (token && !isTokenExpired(token)) {
-        debugLog("Loaded cached token from localStorage");
-        return token;
-      }
-    }
-    
-    // Remove expired token
-    localStorage.removeItem('auth_token_cache');
-    return null;
-  } catch (error) {
-    console.error("Error loading cached token:", error);
-    return null;
-  }
-}
-
-// Try to restore token from cache
-const initialCachedToken = tryLoadCachedToken();
-if (initialCachedToken) {
-  tokenCache.set(initialCachedToken);
-}
 
 /**
  * Hook to handle authentication between Clerk and Supabase
@@ -125,63 +32,29 @@ export function useSupabaseAuth() {
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [canVote, setCanVote] = useState(false);
   const [tokenVerified, setTokenVerified] = useState(false);
-  const [isSyncedWithSupabase, setIsSyncedWithSupabase] = useState(USER_SYNCED_WITH_SUPABASE);
   
   // Add a ref to track if sync is in progress to prevent loops
   const syncInProgress = useRef(false);
   // Add a ref to track last sync time
   const lastSyncTime = useRef(0);
   // Store the auth token
-  const authToken = useRef<string | null>(initialCachedToken);
-  // Track initialized state
-  const isInitialized = useRef(false);
+  const authToken = useRef<string | null>(null);
   // Track retry attempts
   const retryAttempts = useRef(0);
   // Track if the component is mounted
   const isMounted = useRef(true);
 
-  // Get a fresh token with priority given to token cache
+  // Get a fresh token
   const getFreshToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
-    // If we have a valid cached token and aren't forcing a refresh, use it
-    if (!forceRefresh && tokenCache.isValid()) {
-      debugLog("Using cached token");
-      return tokenCache.token;
-    }
-    
     try {
       debugLog("Getting fresh token from Clerk");
-      
-      // Use our new refreshToken utility that manages concurrent refreshes
-      const token = await refreshToken(
-        () => getToken({ template: 'supabase' }),
-        authToken.current
-      );
+      const token = await getToken({ template: 'supabase' });
       
       if (token) {
-        debugLog("Successfully obtained token from Clerk in", Date.now() - lastSyncTime.current, "ms");
-        tokenCache.set(token);
-        
-        // Also update our local reference
+        debugLog("Successfully obtained token from Clerk");
         authToken.current = token;
-        
-        // Store in localStorage for persistence
-        if (isBrowser()) {
-          try {
-            // Calculate expiry time (50 minutes from now)
-            const expiry = Date.now() + TOKEN_REFRESH_THRESHOLD;
-            
-            localStorage.setItem('auth_token_cache', JSON.stringify({
-              token,
-              timestamp: Date.now(),
-              expiry
-            }));
-          } catch (storageError) {
-            console.error("Error storing token in localStorage:", storageError);
-          }
-        }
-        
         return token;
-      } 
+      }
       
       debugLog("No token returned from Clerk");
       return null;
@@ -193,33 +66,23 @@ export function useSupabaseAuth() {
 
   const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
     debugLog(`syncUserWithClerk called with forceRefresh = ${forceRefresh}`);
-    debugLog("Current state:", { 
-      inProgress: syncInProgress.current, 
-      globalInProgress: GLOBAL_SYNC_IN_PROGRESS,
-      initialized: isInitialized.current,
-      currentToken: authToken.current ? 'exists' : 'missing',
-      retryAttempts: retryAttempts.current
-    });
     
-    // Skip if already syncing (either in this hook instance or globally)
-    if (syncInProgress.current || GLOBAL_SYNC_IN_PROGRESS) {
+    // Skip if already syncing
+    if (syncInProgress.current) {
       console.log('Sync already in progress, skipping');
       return;
     }
 
     // Throttle sync attempts unless forced
     const now = Date.now();
-    if (!forceRefresh && isInitialized.current && (now - lastSyncTime.current < MIN_SYNC_INTERVAL)) {
+    if (!forceRefresh && (now - lastSyncTime.current < MIN_SYNC_INTERVAL)) {
       console.log('Throttling sync attempt, last sync was too recent');
       return;
     }
 
     try {
-      // Set both local and global sync flags
       syncInProgress.current = true;
-      GLOBAL_SYNC_IN_PROGRESS = true;
       lastSyncTime.current = now;
-      
       setIsLoading(true);
       
       // Handle sign out case
@@ -228,74 +91,47 @@ export function useSupabaseAuth() {
         setCanVote(false);
         setSupabaseUser(null);
         setTokenVerified(false);
-        setIsSyncedWithSupabase(false);
-        USER_SYNCED_WITH_SUPABASE = false;
-        
-        if (authToken.current) {
-          // Clear supabase session if we had one
-          await setSupabaseToken(null);
-          authToken.current = null;
-          
-          // Clear localStorage cache
-          if (isBrowser()) {
-            localStorage.removeItem('auth_token_cache');
-          }
-        }
-        
-        // Update state and flags
-        isInitialized.current = true;
-        retryAttempts.current = 0;
-        setIsLoading(false);
+        authToken.current = null;
         return;
       }
 
       console.log("Syncing Clerk user with Supabase...");
       
-      // Get JWT token from Clerk only if needed or forced
-      // Also check for token expiration
-      if (forceRefresh || !authToken.current || (authToken.current && isTokenExpired(authToken.current))) {
-        const token = await getFreshToken(forceRefresh);
+      // Get JWT token from Clerk
+      const token = await getFreshToken(forceRefresh);
+      
+      if (!token) {
+        // Increment retry counter
+        retryAttempts.current += 1;
         
-        if (!token) {
-          // Increment retry counter
-          retryAttempts.current += 1;
-          
-          if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
-            console.log(`Token retrieval failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
-            // Set a timeout to retry but reset sync flags first
-            syncInProgress.current = false;
-            GLOBAL_SYNC_IN_PROGRESS = false;
-            if (isMounted.current) {
-              setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
-            }
-            return;
-          } else {
-            console.error("Max token retry attempts reached, giving up");
-            if (authToken.current) {
-              await setSupabaseToken(null);
-              authToken.current = null;
-            }
-            setTokenVerified(false);
-            setCanVote(false);
+        if (retryAttempts.current <= MAX_TOKEN_RETRIES) {
+          console.log(`Token retrieval failed, retry attempt ${retryAttempts.current}/${MAX_TOKEN_RETRIES}`);
+          // Set a timeout to retry
+          if (isMounted.current) {
+            setTimeout(() => syncUserWithClerk(true), 1000); // Retry after 1 second
           }
+          return;
         } else {
-          // Reset retry counter on success
-          retryAttempts.current = 0;
-          authToken.current = token;
-          setTokenVerified(true);
+          console.error("Max token retry attempts reached, giving up");
+          setTokenVerified(false);
+          setCanVote(false);
         }
+      } else {
+        // Reset retry counter on success
+        retryAttempts.current = 0;
+        setTokenVerified(true);
       }
 
       // Skip further processing if component unmounted during async operation
       if (!isMounted.current) return;
 
-      // Sync user data with Supabase regardless of JWT status
+      // Sync user data with Supabase
       if (user) {
         const primaryEmail = user.primaryEmailAddress?.emailAddress;
         
         if (!primaryEmail) {
           console.warn("No primary email found for user");
-        } else if (!isSyncedWithSupabase) {
+        } else {
           console.log("Syncing user data with Supabase");
           try {
             const syncedUser = await syncUserWithSupabase(
@@ -309,106 +145,15 @@ export function useSupabaseAuth() {
             if (syncedUser && isMounted.current) {
               console.log("Successfully synced user with Supabase:", syncedUser);
               setSupabaseUser(syncedUser);
-              setIsSyncedWithSupabase(true);
-              USER_SYNCED_WITH_SUPABASE = true;
+              setCanVote(true);
             } else {
               console.warn("User sync returned no data");
             }
           } catch (syncError) {
             console.error("Error syncing user data:", syncError);
-            // Continue with auth verification even if sync fails
           }
-        } else {
-          debugLog("User already synced, skipping sync operation");
         }
       }
-      
-      // Skip further processing if component unmounted
-      if (!isMounted.current) return;
-      
-      // Verify Supabase session if we have a token
-      if (authToken.current && isMounted.current) {
-        // First check if token is expired before even trying to use it
-        if (isTokenExpired(authToken.current)) {
-          debugLog("Auth token is expired, refreshing before verification");
-          authToken.current = await getFreshToken(true);
-          
-          if (!authToken.current) {
-            debugLog("Failed to refresh token, cannot verify session");
-            setCanVote(false);
-            setTokenVerified(false);
-            
-            // Update initialization state
-            isInitialized.current = true;
-            
-            // Reset sync flags
-            syncInProgress.current = false;
-            GLOBAL_SYNC_IN_PROGRESS = false;
-            
-            if (isMounted.current) {
-              setIsLoading(false);
-            }
-            
-            return;
-          }
-        }
-        
-        try {
-          debugLog("Verifying Supabase session with token...");
-          const client = getSupabaseClient(authToken.current);
-          debugLog("Got authenticated client");
-          
-          // Simple test query to verify RLS works
-          const { data, error } = await client.from('jwt_test').select('*').limit(1);
-          
-          debugLog("JWT test result:", { 
-            success: !error,
-            hasData: !!data,
-            errorCode: error?.code,
-            errorMessage: error?.message
-          });
-          
-          if (error) {
-            console.warn("JWT verification failed:", error?.message);
-            
-            // Check if the error is due to an expired token
-            if (error.message?.includes('JWT expired')) {
-              debugLog("JWT expired, forcing token refresh");
-              const freshToken = await getFreshToken(true);
-              
-              if (freshToken) {
-                authToken.current = freshToken;
-                setTokenVerified(true);
-                setCanVote(true);
-              } else {
-                setTokenVerified(false);
-                setCanVote(false);
-              }
-            } else {
-              // Token verification failed for other reasons
-              setTokenVerified(false);
-              setCanVote(false);
-            }
-          } else {
-            console.log("JWT verification succeeded");
-            setCanVote(true);
-            setTokenVerified(true);
-          }
-        } catch (e) {
-          console.error("Error verifying JWT:", e);
-          setCanVote(false);
-          setTokenVerified(false);
-        }
-      } else if (isMounted.current) {
-        debugLog("No token to verify session with", {
-          hasToken: !!authToken.current
-        });
-        setCanVote(false);
-        setTokenVerified(false);
-      }
-      
-      // Update initialization state
-      isInitialized.current = true;
       
     } catch (e) {
       console.error("Error in Clerk-Supabase auth sync:", e);
@@ -422,24 +167,16 @@ export function useSupabaseAuth() {
         setIsLoading(false);
       }
       syncInProgress.current = false;
-      GLOBAL_SYNC_IN_PROGRESS = false;
-      debugLog("Sync completed, state:", {
-        hasToken: !!authToken.current,
-        tokenVerified,
-        canVote,
-        supabaseUser: !!supabaseUser,
-        isSyncedWithSupabase
-      });
     }
-  }, [isSignedIn, user, getFreshToken, isSyncedWithSupabase]);
+  }, [isSignedIn, user, getFreshToken]);
 
   // Initial sync after mount and when auth state changes
   useEffect(() => {
     isMounted.current = true;
     debugLog("Auth state changed - isSignedIn: " + isSignedIn);
     
-    // Only perform sync if not already initialized or in progress
-    if (!isInitialized.current && !syncInProgress.current && !GLOBAL_SYNC_IN_PROGRESS) {
+    // Only perform sync if not already in progress
+    if (!syncInProgress.current) {
       syncUserWithClerk(true); // Force refresh on first load
     }
     
@@ -465,9 +202,9 @@ export function useSupabaseAuth() {
   const refreshAuth = useCallback(async () => {
     console.log("Manual auth refresh requested");
     // Only refresh if not already in progress
-    if (syncInProgress.current || GLOBAL_SYNC_IN_PROGRESS) {
+    if (syncInProgress.current) {
       console.log("Sync already in progress, skipping manual refresh");
-      return Promise.resolve(); // Return a resolved promise
+      return Promise.resolve();
     }
     
     retryAttempts.current = 0; // Reset retry counter for manual refresh
@@ -489,7 +226,6 @@ export function useSupabaseAuth() {
       }
     }
     
-    debugLog("getCurrentAuthToken returning", authToken.current ? "token" : "null");
     return authToken.current;
   }, [getFreshToken]);
 
@@ -510,15 +246,8 @@ export function useSupabaseAuth() {
       return getSupabaseClient(authToken.current);
     }
     
-    // If we might have a token in the cache but not in our ref, check it
-    if (tokenCache.isValid()) {
-      debugLog("supabaseClient using cached token client");
-      authToken.current = tokenCache.token;
-      return getSupabaseClient(tokenCache.token);
-    }
-    
     debugLog("supabaseClient using anonymous client (no token)");
-    return anonClient; // Use the anonymous client if no token is available
+    return anonClient;
   }, [getCurrentAuthToken]);
 
   return {
@@ -526,12 +255,10 @@ export function useSupabaseAuth() {
     supabaseUser,
     canVote,
     tokenVerified,
-    // Return appropriate client based on auth state
     supabase: supabaseClient(),
     error,
     refreshAuth,
     authToken: authToken.current,
-    getCurrentAuthToken,
-    isSyncedWithSupabase
+    getCurrentAuthToken
   };
 } 
