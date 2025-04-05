@@ -38,6 +38,18 @@ export default function Admin() {
           return;
         }
 
+        // First, let's verify the admins table exists and is accessible
+        const { data: tableCheck, error: tableError } = await supabase
+          .from('admins')
+          .select('count')
+          .limit(1);
+
+        if (tableError) {
+          console.error('Error accessing admins table:', tableError);
+          return;
+        }
+
+        // Now check if the user is an admin
         const { data, error } = await supabase
           .from('admins')
           .select('email')
@@ -49,6 +61,7 @@ export default function Admin() {
           return;
         }
 
+        console.log('Admin check result:', data);
         setIsAdmin(!!data);
       } catch (error) {
         console.error('Error checking admin status:', error);
