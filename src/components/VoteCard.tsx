@@ -304,6 +304,156 @@ export function VoteCard({
     });
   };
 
+  // Render a vote summary section with breakdown
+  const renderVoteSummary = () => {
+    // If stats are loading or there are no votes, don't show summary
+    if (isLoadingStats || !voteStats) {
+      return null;
+    }
+
+    // For yes/no votes
+    if (type === "yesno") {
+      const yesVotes = voteStats?.['yes'] || 0;
+      const noVotes = voteStats?.['no'] || 0;
+      const totalVotes = yesVotes + noVotes;
+      
+      // Don't show if no votes yet
+      if (totalVotes === 0) return null;
+      
+      // Calculate percentages
+      const yesPercentage = totalVotes > 0 ? Math.round((yesVotes / totalVotes) * 100) : 0;
+      const noPercentage = totalVotes > 0 ? Math.round((noVotes / totalVotes) * 100) : 0;
+      
+      return (
+        <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+          <div className="text-sm font-medium text-gray-700 mb-2 flex justify-between">
+            <span>Ukupno glasova: {totalVotes}</span>
+          </div>
+          
+          {/* Yes bar */}
+          <div className="mb-2">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="font-medium text-green-700">Za: {yesVotes}</span>
+              <span className="font-medium text-green-700">{yesPercentage}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div 
+                className="bg-green-500 h-2.5 rounded-full" 
+                style={{ width: `${yesPercentage}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* No bar */}
+          <div>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="font-medium text-red-700">Protiv: {noVotes}</span>
+              <span className="font-medium text-red-700">{noPercentage}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div 
+                className="bg-red-500 h-2.5 rounded-full" 
+                style={{ width: `${noPercentage}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // For multiple choice votes
+    if (type === "multiple" && processedOptions.length > 0) {
+      const voteValues = Object.values(voteStats.breakdown || {});
+      const totalVotes = voteValues.reduce((sum, count) => sum + count, 0);
+      
+      // If no votes, don't show
+      if (totalVotes === 0) return null;
+      
+      return (
+        <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+          <div className="text-sm font-medium text-gray-700 mb-3">
+            Ukupno glasova: {totalVotes}
+          </div>
+          
+          {processedOptions.map((option, index) => {
+            const voteCount = voteStats?.breakdown?.[option] || 0;
+            const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+            
+            return (
+              <div key={index} className="mb-2">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="font-medium text-gray-700">{option.length > 30 ? `${option.substring(0, 30)}...` : option}</span>
+                  <div>
+                    <span className="font-medium text-gray-700">{voteCount} </span>
+                    <span className="font-medium text-gray-500">({percentage}%)</span>
+                  </div>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-500 h-2.5 rounded-full" 
+                    style={{ width: `${percentage}%` }}
+                  ></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    
+    // For range voting, show distribution
+    if (type === "range") {
+      // Calculate total votes by summing all values in the breakdown
+      const breakdown = voteStats?.breakdown || {};
+      const totalVotes = Object.values(breakdown).reduce((sum, count) => sum + count, 0);
+      
+      if (totalVotes === 0) return null;
+      
+      // Find most popular choice
+      let mostPopularValue = min;
+      let maxCount = 0;
+      
+      for (let i = min; i <= max; i++) {
+        const count = breakdown[i.toString()] || 0;
+        if (count > maxCount) {
+          maxCount = count;
+          mostPopularValue = i;
+        }
+      }
+      
+      return (
+        <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+          <div className="text-sm font-medium text-gray-700 mb-2">
+            Ukupno glasova: {totalVotes}
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="w-full text-center mb-1">
+              <span className="text-sm font-medium text-serbia-blue">
+                Najčešći izbor: {mostPopularValue} meseci ({maxCount} glasova)
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-4 flex items-center">
+              {/* Position marker for most popular choice */}
+              <div
+                className="absolute w-2 h-5 bg-serbia-blue rounded"
+                style={{ 
+                  left: `calc(${((mostPopularValue - min) / (max - min)) * 100}% + 16px)`,
+                  marginLeft: "-1px"
+                }}
+              ></div>
+            </div>
+            <div className="w-full flex justify-between text-xs mt-1">
+              <span>{min} meseci</span>
+              <span>{max} meseci</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    return null;
+  };
+
   const renderVoteOptions = () => {
     const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote;
     const isDisabled = isLoading || isAuthLoading || !isSignedIn;
@@ -327,36 +477,36 @@ export function VoteCard({
             <Button
               onClick={() => handleVote("yes")}
               className={cn(
-                "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all",
+                "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-6 text-base",
                 selectedOption === "yes" && "bg-green-100 border-green-300"
               )}
               variant="outline"
               disabled={isDisabled}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
-                <ThumbsUp className="mr-2 h-4 w-4" />
+                <ThumbsUp className="mr-2 h-5 w-5" />
               )}
-              Da {totalYesNoVotes > 0 && `(${yesVotes})`}
-              {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-4 w-4 text-green-600" />}
+              <span className="font-medium">Za</span>
+              {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
             </Button>
             <Button
               onClick={() => handleVote("no")}
               className={cn(
-                "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all",
+                "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-6 text-base",
                 selectedOption === "no" && "bg-red-100 border-red-300"
               )}
               variant="outline"
               disabled={isDisabled}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
-                <ThumbsDown className="mr-2 h-4 w-4" />
+                <ThumbsDown className="mr-2 h-5 w-5" />
               )}
-              Ne {totalYesNoVotes > 0 && `(${noVotes})`}
-              {selectedOption === "no" && <CheckCircle2 className="ml-2 h-4 w-4 text-red-600" />}
+              <span className="font-medium">Protiv</span>
+              {selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
             </Button>
           </div>
         );
@@ -364,19 +514,19 @@ export function VoteCard({
         return (
           <div className="flex flex-col gap-3 mt-6">
             {processedOptions.map((option, index) => {
-              const voteCount = voteStats?.[option] || 0;
+              const voteCount = voteStats?.breakdown?.[option] || 0;
               return (
                 <Button
                   key={index}
                   onClick={() => handleVote(option)}
                   className={cn(
-                    "justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all",
+                    "justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all py-5 px-4 h-auto",
                     selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
                   )}
                   variant="outline"
                   disabled={isDisabled}
                 >
-                  <span>{option}</span>
+                  <span className="font-medium">{option}</span>
                   <span className="flex items-center">
                     {voteCount > 0 && 
                       <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
@@ -440,6 +590,7 @@ export function VoteCard({
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>
+        {renderVoteSummary()}
         {renderVoteOptions()}
 
         {/* Comments section */}
