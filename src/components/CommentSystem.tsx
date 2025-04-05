@@ -20,6 +20,7 @@ import {
 } from "@/hooks/use-queries";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@clerk/clerk-react";
+import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 
 interface CommentWithMetadata extends Comment {
   votes?: number;
@@ -37,9 +38,18 @@ export function CommentSystem({ requestId, comments }: CommentSystemProps) {
   const { mutate: addComment, isPending: isAddingComment } = useAddComment();
   const { toast } = useToast();
   const { user } = useUser();
+  const { canVote, tokenVerified } = useSupabaseAuth();
 
   const handleAddComment = () => {
     if (!commentText.trim()) return;
+    if (!canVote || !tokenVerified) {
+      toast({
+        title: "Greška",
+        description: "Morate biti prijavljeni da biste dodali komentar.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     addComment(
       { requestId, content: commentText },
@@ -118,6 +128,7 @@ function CommentThread({
   
   const { user } = useUser();
   const { toast } = useToast();
+  const { canVote, tokenVerified } = useSupabaseAuth();
   
   const { mutate: addComment, isPending: isAddingReply } = useAddComment();
   const { mutate: updateComment, isPending: isUpdatingComment } = useUpdateComment();
@@ -142,6 +153,15 @@ function CommentThread({
     : "Nedavno";
 
   const handleVote = (value: -1 | 1) => {
+    if (!canVote || !tokenVerified) {
+      toast({
+        title: "Greška",
+        description: "Morate biti prijavljeni da biste glasali.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // If user already voted this way, this will remove their vote
     voteOnComment(
       { commentId: comment.id, value, requestId },
@@ -159,6 +179,14 @@ function CommentThread({
 
   const handleReply = () => {
     if (!replyText.trim()) return;
+    if (!canVote || !tokenVerified) {
+      toast({
+        title: "Greška",
+        description: "Morate biti prijavljeni da biste dodali odgovor.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     addComment(
       { 
@@ -190,6 +218,14 @@ function CommentThread({
     if (!editText.trim() || editText === comment.content) {
       setIsEditing(false);
       setEditText(comment.content);
+      return;
+    }
+    if (!canVote || !tokenVerified) {
+      toast({
+        title: "Greška",
+        description: "Morate biti prijavljeni da biste uredili komentar.",
+        variant: "destructive",
+      });
       return;
     }
 
