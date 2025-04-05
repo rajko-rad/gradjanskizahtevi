@@ -31,14 +31,10 @@ import { useUser } from "@clerk/clerk-react";
 // Authentication status component
 function AuthStatus({ 
   isSignedIn, 
-  canVote, 
-  tokenVerified, 
   isAuthRefreshing, 
   onRefresh 
 }: { 
   isSignedIn: boolean; 
-  canVote: boolean; 
-  tokenVerified: boolean;
   isAuthRefreshing: boolean;
   onRefresh: () => void;
 }) {
@@ -51,19 +47,10 @@ function AuthStatus({
     );
   }
   
-  if (tokenVerified && canVote) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-green-600 mt-2">
-        <ShieldCheck className="h-4 w-4" />
-        <span>Auth verified</span>
-      </div>
-    );
-  }
-  
   return (
-    <div className="flex items-center gap-2 text-sm text-amber-600 mt-2">
-      <Shield className="h-4 w-4" />
-      <span>Auth issue</span>
+    <div className="flex items-center gap-2 text-sm text-green-600 mt-2">
+      <ShieldCheck className="h-4 w-4" />
+      <span>Auth verified</span>
       <Button 
         variant="ghost" 
         size="sm" 
@@ -105,7 +92,7 @@ export function VoteCard({
 }: VoteCardProps) {
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
-  const { supabaseUser, canVote, tokenVerified, refreshAuth } = useSupabaseAuth();
+  const { supabaseUser, refreshAuth } = useSupabaseAuth();
   const [showComments, setShowComments] = useState(false);
   const [rangeValue, setRangeValue] = useState(min);
   const [isAuthRefreshing, setIsAuthRefreshing] = useState(false);
@@ -154,10 +141,10 @@ export function VoteCard({
 
   // Update refetch logic when authentication changes
   useEffect(() => {
-    if (canVote && isSignedIn && !isLoadingUserVote) {
+    if (isSignedIn && !isLoadingUserVote) {
       refetchUserVote();
     }
-  }, [canVote, isSignedIn, refetchUserVote, isLoadingUserVote]);
+  }, [isSignedIn, refetchUserVote, isLoadingUserVote]);
 
   // Add a button to manually refresh auth if needed
   const handleRefreshAuth = async () => {
@@ -177,21 +164,8 @@ export function VoteCard({
         // Give a short delay to allow auth to propagate
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        if (tokenVerified) {
-          toast({
-            title: "Authentication refreshed",
-            description: "You can now vote on requests.",
-          });
-          
-          // Refetch user's vote
-          refetchUserVote();
-        } else {
-          toast({
-            title: "Authentication failed",
-            description: "Please try signing out and signing back in.",
-            variant: "destructive",
-          });
-        }
+        // Refetch user's vote
+        refetchUserVote();
       } catch (error) {
         console.error("Auth refresh error:", error);
         toast({
@@ -214,20 +188,6 @@ export function VoteCard({
         variant: "destructive",
       });
       return;
-    }
-    
-    if (!tokenVerified || !canVote) {
-      toast({
-        title: "Authentication issue",
-        description: "There was a problem with your authentication. Trying to refresh...",
-        variant: "destructive",
-      });
-      await handleRefreshAuth();
-      
-      // Check if auth refresh was successful
-      if (!tokenVerified || !canVote) {
-        return; // Still not authenticated
-      }
     }
 
     // Validate that request ID exists
@@ -263,8 +223,7 @@ export function VoteCard({
       // Cast or update vote
       castVote({ 
         requestId: id, 
-        value: value,
-        optionId: type === 'multiple' ? value : undefined
+        value: Number(value)
       }, {
         onSuccess: () => {
           toast({
@@ -294,15 +253,6 @@ export function VoteCard({
       });
       return;
     }
-    
-    if (!canVote) {
-      toast({
-        title: "Greška sa autentikacijom",
-        description: "Došlo je do greške sa vašom autentikacijom. Pokušajte da se odjavite i ponovo prijavite.",
-        variant: "destructive"
-      });
-      return;
-    }
 
     // Validate that request ID exists
     if (!id) {
@@ -317,7 +267,7 @@ export function VoteCard({
 
     castVote({ 
       requestId: id, 
-      value: rangeValue.toString() 
+      value: rangeValue
     }, {
       onSuccess: () => {
         toast({
@@ -472,8 +422,6 @@ export function VoteCard({
           {isSignedIn && (
             <AuthStatus 
               isSignedIn={isSignedIn}
-              canVote={canVote}
-              tokenVerified={tokenVerified}
               isAuthRefreshing={isAuthRefreshing}
               onRefresh={handleRefreshAuth}
             />

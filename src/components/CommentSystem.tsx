@@ -19,7 +19,7 @@ import {
   useVoteOnComment 
 } from "@/hooks/use-queries";
 import { useToast } from "@/hooks/use-toast";
-import { useUser } from "@clerk/clerk-react";
+import { useUser, useAuth } from "@clerk/clerk-react";
 import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 
 interface CommentWithMetadata extends Comment {
@@ -38,11 +38,11 @@ export function CommentSystem({ requestId, comments }: CommentSystemProps) {
   const { mutate: addComment, isPending: isAddingComment } = useAddComment();
   const { toast } = useToast();
   const { user } = useUser();
-  const { canVote, tokenVerified } = useSupabaseAuth();
+  const { isSignedIn } = useAuth();
 
   const handleAddComment = () => {
     if (!commentText.trim()) return;
-    if (!canVote || !tokenVerified) {
+    if (!isSignedIn) {
       toast({
         title: "Greška",
         description: "Morate biti prijavljeni da biste dodali komentar.",
@@ -127,6 +127,7 @@ function CommentThread({
   const [showFullComment, setShowFullComment] = useState(false);
   
   const { user } = useUser();
+  const { isSignedIn } = useAuth();
   const { toast } = useToast();
   const { canVote, tokenVerified } = useSupabaseAuth();
   
@@ -179,7 +180,7 @@ function CommentThread({
 
   const handleReply = () => {
     if (!replyText.trim()) return;
-    if (!canVote || !tokenVerified) {
+    if (!isSignedIn) {
       toast({
         title: "Greška",
         description: "Morate biti prijavljeni da biste dodali odgovor.",
@@ -220,7 +221,7 @@ function CommentThread({
       setEditText(comment.content);
       return;
     }
-    if (!canVote || !tokenVerified) {
+    if (!isSignedIn) {
       toast({
         title: "Greška",
         description: "Morate biti prijavljeni da biste uredili komentar.",
