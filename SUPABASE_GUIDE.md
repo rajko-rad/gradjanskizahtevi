@@ -9,7 +9,6 @@ This guide explains how to use Supabase in the Građanski Zahtevi project, inclu
 - [Data Access Patterns](#data-access-patterns)
 - [Common Operations](#common-operations)
 - [Database Schema](#database-schema)
-- [Database Management with CLI](#database-management-with-cli)
 - [Limitations and Gotchas](#limitations-and-gotchas)
 - [Troubleshooting](#troubleshooting)
 
@@ -38,10 +37,6 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
-export function getSupabaseClient() {
-  return supabase;
-}
-
 export default supabase;
 ```
 
@@ -58,40 +53,72 @@ The project uses Clerk for authentication and syncs Clerk's JWT tokens with Supa
 ```typescript
 // In src/hooks/use-supabase-auth.ts
 export function useSupabaseAuth() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
 
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    // Function to sync the token with Supabase
-    const syncToken = async () => {
-      if (isSignedIn && user) {
-        // Get the JWT from Clerk for Supabase
-        const token = await getToken({ template: 'supabase' });
-        
-        // Set the token in Supabase
-        await setSupabaseToken(token);
-        
-        // Sync user data with Supabase
-        await syncUserWithSupabase(
-          user.id,
-          user.primaryEmailAddress?.emailAddress || '',
-          user.fullName || null,
-          user.imageUrl || null
-        );
-      } else {
-        // User is signed out, clear the Supabase session
-        await setSupabaseToken(null);
+  // Get a fresh token
+  const getFreshToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
+    try {
+      const token = await getToken({ template: 'supabase' });
+      if (token) {
+        return token;
       }
-    };
+      return null;
+    } catch (error) {
+      console.error("Error getting token:", error);
+      return null;
+    }
+  }, [getToken]);
 
-    // Call the sync function
-    syncToken();
-  }, [isLoaded, isSignedIn, getToken, user]);
+  // Sync user with Supabase
+  const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
+    if (!isSignedIn || !user) {
+      setCanVote(false);
+      setSupabaseUser(null);
+      setTokenVerified(false);
+      return;
+    }
 
-  // Return user data for convenience
-  return { isLoaded, isSignedIn, user };
+    const token = await getFreshToken(forceRefresh);
+    if (!token) {
+      setTokenVerified(false);
+      setCanVote(false);
+      return;
+    }
+
+    setTokenVerified(true);
+    
+    // Sync user data with Supabase
+    if (user) {
+      const primaryEmail = user.primaryEmailAddress?.emailAddress;
+      if (primaryEmail) {
+        const syncedUser = await syncUserWithSupabase(
+          user.id,
+          primaryEmail,
+          user.fullName,
+          user.imageUrl,
+          token
+        );
+        
+        if (syncedUser) {
+          setSupabaseUser(syncedUser);
+          setCanVote(true);
+        }
+      }
+    }
+  }, [isSignedIn, user, getFreshToken]);
+
+  return {
+    isLoading,
+    supabaseUser,
+    canVote,
+    tokenVerified,
+    supabase: supabaseClient(),
+    error,
+    refreshAuth,
+    authToken: authToken.current,
+    getCurrentAuthToken
+  };
 }
 ```
 
@@ -104,10 +131,7 @@ import { useUser } from '@clerk/clerk-react';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
 
 function MyComponent() {
-  // Call useSupabaseAuth at the top level to ensure auth is synced
-  useSupabaseAuth();
-  
-  // Use useUser hook to access user data
+  const { supabase, canVote } = useSupabaseAuth();
   const { user, isSignedIn } = useUser();
   
   if (!isSignedIn) {
@@ -203,11 +227,12 @@ function VoteButton({ requestId, value }) {
 While React Query hooks are preferred, you can use the Supabase client directly when needed:
 
 ```typescript
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/clerk-supabase';
 
 // Fetch data directly
 async function fetchCategories() {
-  const { data, error } = await supabase
+  const client = getSupabaseClient();
+  const { data, error } = await client
     .from('categories')
     .select('*');
     
@@ -255,56 +280,6 @@ updateRequest({
 });
 ```
 
-### Handling Real-time Updates
-
-Supabase supports real-time updates, but this requires additional setup:
-
-```typescript
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-
-function RealtimeVotes({ requestId }) {
-  const [voteCount, setVoteCount] = useState(0);
-  
-  useEffect(() => {
-    // Fetch initial count
-    const fetchVotes = async () => {
-      const { data } = await supabase
-        .from('votes')
-        .select('id')
-        .eq('request_id', requestId);
-      
-      setVoteCount(data?.length || 0);
-    };
-    
-    fetchVotes();
-    
-    // Subscribe to changes
-    const subscription = supabase
-      .channel('public:votes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'votes',
-        filter: `request_id=eq.${requestId}`
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setVoteCount(count => count + 1);
-        } else if (payload.eventType === 'DELETE') {
-          setVoteCount(count => count - 1);
-        }
-      })
-      .subscribe();
-    
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, [requestId]);
-  
-  return <div>Votes: {voteCount}</div>;
-}
-```
-
 ## Database Schema
 
 The database schema includes the following tables:
@@ -322,158 +297,6 @@ The database schema includes the following tables:
 - `timeline_events` - Timeline events for requests
 
 Each table has appropriate relationships and constraints defined.
-
-## Database Management with CLI
-
-We use the Supabase CLI to manage database changes in a structured and version-controlled way.
-
-### Installing the Supabase CLI
-
-```bash
-# On macOS
-brew install supabase/tap/supabase
-
-# Using npm
-npm install -g supabase
-```
-
-### Initial Setup
-
-The project already has a Supabase configuration. If you're setting up a new project:
-
-```bash
-# Initialize Supabase configuration
-supabase init
-
-# Link to your remote project (after creating it in the Supabase dashboard)
-supabase link --project-ref <project-reference-id>
-```
-
-### Making Database Changes
-
-All database changes should be implemented as migrations. Here's how:
-
-1. **Create a migration file**:
-
-   Create a new SQL file in the `supabase/migrations` directory with a timestamp prefix:
-   
-   ```bash
-   mkdir -p supabase/migrations
-   touch supabase/migrations/$(date +%Y%m%d%H%M%S)_my_migration_name.sql
-   ```
-
-2. **Write your SQL changes**:
-
-   Edit the migration file to include your database changes:
-   
-   ```sql
-   -- Example migration
-   CREATE TABLE IF NOT EXISTS public.my_new_table (
-     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-     name text NOT NULL,
-     created_at timestamp with time zone DEFAULT now() NOT NULL
-   );
-   
-   -- Create indexes
-   CREATE INDEX IF NOT EXISTS my_new_table_name_idx ON public.my_new_table (name);
-   ```
-
-3. **Apply the migration**:
-
-   Push the migration to your Supabase project:
-   
-   ```bash
-   supabase db push
-   ```
-
-### How We Set Up the Database
-
-In our initial setup, we:
-
-1. Created a complete SQL script (`setup_full.sql`) that contained:
-   - Table definitions
-   - Indexes
-   - Sample data
-
-2. Created a migration directory and added our script:
-   ```bash
-   mkdir -p supabase/migrations
-   cp setup_full.sql supabase/migrations/20240604000000_initial_setup.sql
-   ```
-
-3. Initialized the Supabase project:
-   ```bash
-   supabase init
-   ```
-
-4. Linked to our remote Supabase project:
-   ```bash
-   supabase link --project-ref jlrkiwnmissvmiupaena
-   ```
-
-5. Pushed our migration to apply the changes:
-   ```bash
-   supabase db push
-   ```
-
-### Best Practices for Future Changes
-
-1. **Always use migrations**:
-   - Never make direct changes to the database schema
-   - All changes should be applied through migration files
-
-2. **One change per migration**:
-   - Keep migrations focused on a single logical change
-   - This makes it easier to revert if needed
-
-3. **Use idempotent statements**:
-   - Use `IF NOT EXISTS` and `IF EXISTS` clauses
-   - This prevents errors if migrations are run multiple times
-
-4. **Version control your migrations**:
-   - Commit all migration files to your Git repository
-   - This serves as a history of your database schema
-
-5. **Test migrations locally first**:
-   - Use `supabase start` to run a local Supabase instance
-   - Apply migrations locally before pushing to production
-
-### Common CLI Commands
-
-```bash
-# Link to your remote project
-supabase link --project-ref <project-reference-id>
-
-# Create a new migration (manual method)
-mkdir -p supabase/migrations
-touch supabase/migrations/$(date +%Y%m%d%H%M%S)_migration_name.sql
-
-# Push migrations to remote
-supabase db push
-
-# Start a local development environment
-supabase start
-
-# Stop the local development environment
-supabase stop
-
-# Check for differences between local and remote schemas
-supabase db diff
-
-# Reset the local database (caution!)
-supabase db reset
-```
-
-### Checking Database State
-
-You can use the REST API to verify your schema and data:
-
-```bash
-# Check if tables exist and are correctly structured
-curl -s "https://your-project-ref.supabase.co/rest/v1/categories?select=*" \
-  -H "apikey: your-anon-key" \
-  -H "Authorization: Bearer your-anon-key"
-```
 
 ## Limitations and Gotchas
 
@@ -525,7 +348,8 @@ For database query errors:
 ```typescript
 // Debug a Supabase query
 try {
-  const { data, error } = await supabase
+  const client = getSupabaseClient();
+  const { data, error } = await client
     .from('categories')
     .select('*');
   

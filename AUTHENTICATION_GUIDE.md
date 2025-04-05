@@ -21,6 +21,67 @@ The application uses Clerk for authentication and Supabase for database operatio
    - Supabase verifies the token using the shared JWT secret
    - This allows RLS policies to recognize the authenticated user
 
+## Cloudflare Workers Integration
+
+The application runs on Cloudflare Workers, which affects how authentication and data operations work:
+
+### Token Management
+
+1. **Token Storage**
+   - Tokens are stored in memory within the Worker's context
+   - Each Worker instance maintains its own token cache
+   - Tokens are not persisted between Worker restarts
+
+2. **Token Refresh**
+   - The `useSupabaseAuth` hook handles token refresh automatically
+   - When a token expires, the hook requests a new one from Clerk
+   - The new token is then used for subsequent Supabase requests
+
+### Voting Component Implementation
+
+The voting system is implemented with Cloudflare Workers in mind:
+
+1. **Client-Side Voting**
+   ```typescript
+   // In src/services/votes.ts
+   export async function castVote(
+     userId: string, 
+     requestId: string, 
+     value: number,
+     authToken?: string | null
+   ): Promise<Vote | null> {
+     // Get appropriate client based on auth token
+     const client = getSupabaseClient(authToken);
+     
+     // Check if user already voted
+     const existingVote = await getUserVote(userId, requestId, authToken);
+     
+     if (existingVote) {
+       // Update existing vote
+       const { data, error } = await client
+         .from('votes')
+         .update({ value })
+         .eq('user_id', userId)
+         .eq('request_id', requestId);
+     } else {
+       // Create new vote
+       const { data, error } = await client
+         .from('votes')
+         .insert({ user_id: userId, request_id: requestId, value });
+     }
+   }
+   ```
+
+2. **Error Handling**
+   - Special handling for auth errors (PGRST301, 42501)
+   - Token expiration checks
+   - Network error recovery
+
+3. **Performance Considerations**
+   - Minimal token validation overhead
+   - Efficient client caching
+   - Optimized database queries
+
 ## JWT Template Configuration
 
 The Clerk JWT template for Supabase must be configured exactly as follows for authentication to work properly:
@@ -152,8 +213,34 @@ If you encounter issues with authentication:
    - Look for the Authorization header to confirm token is being sent
    - Use a tool like jwt.io to decode and verify your tokens
 
+## Cloudflare Workers Specific Issues
+
+When running on Cloudflare Workers, watch out for:
+
+1. **Token Expiration**
+   - Workers may cache tokens longer than expected
+   - Implement proper token refresh logic
+   - Use the `getFreshToken` function from `useSupabaseAuth`
+
+2. **Network Latency**
+   - Workers may experience higher latency to Supabase
+   - Implement retry logic for failed requests
+   - Consider using connection pooling
+
+3. **Cold Starts**
+   - New Worker instances start with empty token cache
+   - Handle token revalidation on cold starts
+   - Consider warming up frequently used routes
+
+4. **Memory Limits**
+   - Workers have memory constraints
+   - Keep token cache size reasonable
+   - Implement cache eviction policies
+
 ## Next Steps
 
 1. Implement RLS policies for all tables
 2. Add admin role and policies for admin actions
-3. Test all authenticated operations thoroughly 
+3. Test all authenticated operations thoroughly
+4. Monitor Worker performance and token management
+5. Implement proper error handling for network issues 
