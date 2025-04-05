@@ -179,10 +179,56 @@ export function logTokenInfo(token: string | null | undefined) {
   }
 }
 
+/**
+ * Test a JWT token by attempting to make an authenticated request
+ * This is a debugging function to verify RLS policies are working
+ */
+export async function testJwtToken(token: string) {
+  try {
+    debugLog("Testing JWT token...");
+    
+    // Create a client with the token
+    const client = getSupabaseClient(token);
+    
+    // Try to make a simple query to verify RLS works
+    const { data, error } = await client.from('jwt_test').select('*').limit(1);
+    
+    debugLog("JWT test result:", { 
+      success: !error,
+      hasData: !!data,
+      errorCode: error?.code,
+      errorMessage: error?.message
+    });
+    
+    return {
+      success: !error,
+      error: error ? {
+        code: error.code,
+        message: error.message
+      } : null,
+      data
+    };
+  } catch (error) {
+    console.error("Error testing JWT token:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? {
+        code: 'UNKNOWN',
+        message: error.message
+      } : {
+        code: 'UNKNOWN',
+        message: 'Unknown error occurred'
+      },
+      data: null
+    };
+  }
+}
+
 export default {
   anonClient,
   createAuthClient,
   getSupabaseClient,
   logTokenInfo,
-  isTokenExpired
+  isTokenExpired,
+  testJwtToken
 }; 
