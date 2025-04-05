@@ -22,36 +22,25 @@ function debugLog(message: string, ...args: any[]) {
 export async function castVote(
   userId: string, 
   requestId: string, 
-  value: number,
+  value: string,
   authToken?: string | null
 ): Promise<Vote | null> {
   // Log detailed params to help with debugging
-  debugLog("castVote called with:", {
-    userId: userId ? `${userId.substring(0, 8)}...` : 'missing',
-    requestId: requestId || 'missing',
+  debugLog("castVote called with:", { 
+    userId, 
+    requestId, 
     value,
-    hasToken: !!authToken,
-    tokenLength: authToken?.length
+    hasToken: !!authToken 
   });
 
   // Validate required parameters
   if (!userId || !requestId || value === undefined) {
-    console.warn('Missing required parameters for castVote:', { 
-      hasUserId: !!userId, 
-      hasRequestId: !!requestId, 
-      hasValue: value !== undefined 
-    });
+    console.error("Missing required parameters for castVote:", { userId, requestId, value });
     return null;
   }
 
-  // Get appropriate client based on auth token
+  // Use the appropriate client based on token availability
   const client = getSupabaseClient(authToken);
-  
-  if (authToken) {
-    logTokenInfo(authToken);
-  } else {
-    console.warn("No auth token provided to castVote - this may cause permission issues");
-  }
 
   try {
     // Check if user already voted for this request
