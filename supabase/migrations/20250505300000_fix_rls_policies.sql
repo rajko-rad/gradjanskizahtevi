@@ -39,59 +39,59 @@ CREATE POLICY "Users can delete own votes"
 -- Comments table policies
 CREATE POLICY "Users can insert own comments" 
   ON public.comments FOR INSERT 
-  WITH CHECK (auth.jwt()->>'sub' = user_id);
+  WITH CHECK (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can update own comments" 
   ON public.comments FOR UPDATE 
-  USING (auth.jwt()->>'sub' = user_id);
+  USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can delete own comments" 
   ON public.comments FOR DELETE 
-  USING (auth.jwt()->>'sub' = user_id);
+  USING (auth.uid()::text = user_id);
 
 -- Comment votes table policies
 CREATE POLICY "Users can insert own comment votes" 
   ON public.comment_votes FOR INSERT 
-  WITH CHECK (auth.jwt()->>'sub' = user_id);
+  WITH CHECK (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can update own comment votes" 
   ON public.comment_votes FOR UPDATE 
-  USING (auth.jwt()->>'sub' = user_id);
+  USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can delete own comment votes" 
   ON public.comment_votes FOR DELETE 
-  USING (auth.jwt()->>'sub' = user_id);
+  USING (auth.uid()::text = user_id);
 
 -- Suggested requests table policies
 CREATE POLICY "Users can insert own suggested requests" 
   ON public.suggested_requests FOR INSERT 
-  WITH CHECK (auth.jwt()->>'sub' = user_id);
+  WITH CHECK (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can update own suggested requests" 
   ON public.suggested_requests FOR UPDATE 
-  USING (auth.jwt()->>'sub' = user_id AND status = 'pending');
+  USING (auth.uid()::text = user_id AND status = 'pending');
 
 CREATE POLICY "Users can delete own suggested requests" 
   ON public.suggested_requests FOR DELETE 
-  USING (auth.jwt()->>'sub' = user_id AND status = 'pending');
+  USING (auth.uid()::text = user_id AND status = 'pending');
 
 -- Suggested request votes table policies
 CREATE POLICY "Users can insert own suggested request votes" 
   ON public.suggested_request_votes FOR INSERT 
-  WITH CHECK (auth.jwt()->>'sub' = user_id);
+  WITH CHECK (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can update own suggested request votes" 
   ON public.suggested_request_votes FOR UPDATE 
-  USING (auth.jwt()->>'sub' = user_id);
+  USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can delete own suggested request votes" 
   ON public.suggested_request_votes FOR DELETE 
-  USING (auth.jwt()->>'sub' = user_id);
+  USING (auth.uid()::text = user_id);
 
 -- Users table policies
 CREATE POLICY "Users can update own profiles" 
   ON public.users FOR UPDATE 
-  USING (auth.jwt()->>'sub' = id);
+  USING (auth.uid()::text = id);
 
 -- Create a helper function for debugging JWT claims
 CREATE OR REPLACE FUNCTION auth.debug_jwt() 

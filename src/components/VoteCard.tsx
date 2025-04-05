@@ -201,6 +201,9 @@ export function VoteCard({
       return;
     }
 
+    // Convert string value to number
+    const numericValue = value === "yes" ? 1 : value === "no" ? -1 : Number(value);
+
     // If already voted for this option, remove the vote
     if (selectedOption === value) {
       removeVote({ requestId: id }, {
@@ -223,7 +226,7 @@ export function VoteCard({
       // Cast or update vote
       castVote({ 
         requestId: id, 
-        value: Number(value)
+        value: numericValue
       }, {
         onSuccess: () => {
           toast({

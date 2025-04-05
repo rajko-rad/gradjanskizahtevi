@@ -243,4 +243,210 @@ When running on Cloudflare Workers, watch out for:
 2. Add admin role and policies for admin actions
 3. Test all authenticated operations thoroughly
 4. Monitor Worker performance and token management
-5. Implement proper error handling for network issues 
+5. Implement proper error handling for network issues
+
+## Common Authentication Issues and Solutions
+
+### 1. JWT Token Handling
+
+When working with Supabase and Clerk authentication, proper JWT token handling is crucial:
+
+```typescript
+// In src/hooks/use-supabase-auth.ts
+const getCurrentAuthToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
+  // Check if current token is expired
+  if (authToken.current && isTokenExpired(authToken.current)) {
+    forceRefresh = true;
+  }
+  
+  if (forceRefresh || !authToken.current) {
+    const token = await getFreshToken(forceRefresh);
+    if (token) {
+      authToken.current = token;
+    }
+  }
+  
+  return authToken.current;
+}, [getFreshToken]);
+```
+
+Key points:
+- Always check token expiration before use
+- Implement token refresh logic
+- Cache tokens appropriately
+- Pass tokens to Supabase operations
+
+### 2. Row Level Security (RLS) Policies
+
+For tables that require authentication, ensure proper RLS policies:
+
+```sql
+-- For comments table
+CREATE POLICY "Users can insert own comments" ON public.comments
+  FOR INSERT WITH CHECK (auth.uid()::text = user_id);
+
+-- For votes table
+CREATE POLICY "Users can insert own votes" ON public.votes
+  FOR INSERT WITH CHECK (auth.uid()::text = user_id);
+```
+
+Common RLS issues:
+- Missing WITH CHECK clauses for INSERT operations
+- Type mismatches between auth.uid() and user_id columns
+- Incorrect policy permissions
+
+### 3. Authentication State Management
+
+Proper authentication state management is essential:
+
+```typescript
+// In src/hooks/use-supabase-auth.ts
+const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
+  if (!isSignedIn || !user) {
+    setCanVote(false);
+    setSupabaseUser(null);
+    setTokenVerified(false);
+    return;
+  }
+
+  const token = await getFreshToken(forceRefresh);
+  if (!token) {
+    setTokenVerified(false);
+    setCanVote(false);
+    return;
+  }
+
+  setTokenVerified(true);
+  
+  // Sync user data with Supabase
+  if (user) {
+    const primaryEmail = user.primaryEmailAddress?.emailAddress;
+    if (primaryEmail) {
+      const syncedUser = await syncUserWithSupabase(
+        user.id,
+        primaryEmail,
+        user.fullName,
+        user.imageUrl,
+        token
+      );
+      
+      if (syncedUser) {
+        setSupabaseUser(syncedUser);
+        setCanVote(true);
+      }
+    }
+  }
+}, [isSignedIn, user, getFreshToken]);
+```
+
+Key considerations:
+- Handle sign-out cases
+- Manage token verification state
+- Sync user data with Supabase
+- Implement proper error handling
+
+### 4. Database Schema Considerations
+
+When working with Clerk and Supabase:
+
+1. **User ID Types**:
+   - Clerk uses TEXT type for user IDs
+   - Ensure consistent type usage across tables
+   - Use proper type casting in RLS policies
+
+2. **Table Relationships**:
+   - Define proper foreign key constraints
+   - Use appropriate cascade rules
+   - Consider indexing for performance
+
+3. **Common Tables Structure**:
+   ```sql
+   -- Users table
+   CREATE TABLE public.users (
+     id TEXT PRIMARY KEY,
+     email TEXT,
+     full_name TEXT,
+     avatar_url TEXT,
+     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+   );
+
+   -- Comments table
+   CREATE TABLE public.comments (
+     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+     user_id TEXT REFERENCES public.users(id),
+     request_id TEXT REFERENCES public.requests(id),
+     content TEXT,
+     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+   );
+
+   -- Votes table
+   CREATE TABLE public.votes (
+     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+     user_id TEXT REFERENCES public.users(id),
+     request_id TEXT REFERENCES public.requests(id),
+     value INTEGER,
+     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+   );
+   ```
+
+### 5. Error Handling and Debugging
+
+Common authentication errors and their solutions:
+
+1. **401 Unauthorized Errors**:
+   - Check if JWT token is being passed correctly
+   - Verify token expiration
+   - Ensure RLS policies are properly configured
+
+2. **Type Mismatch Errors**:
+   - Verify user ID types match between Clerk and Supabase
+   - Use proper type casting in RLS policies
+   - Check database schema for consistency
+
+3. **Permission Denied Errors**:
+   - Review RLS policies
+   - Check user authentication state
+   - Verify token claims
+
+4. **Debugging Tips**:
+   ```typescript
+   // Add debug logging
+   const DEBUG_MODE = process.env.NODE_ENV === 'development';
+   
+   function debugLog(message: string, ...args: any[]) {
+     if (DEBUG_MODE) {
+       console.log(`DEBUG: ${message}`, ...args);
+     }
+   }
+   
+   // Log token information
+   debugLog("Token state:", {
+     hasToken: !!authToken.current,
+     isExpired: authToken.current ? isTokenExpired(authToken.current) : false
+   });
+   ```
+
+### 6. Best Practices
+
+1. **Token Management**:
+   - Implement token refresh logic
+   - Cache tokens appropriately
+   - Handle token expiration gracefully
+
+2. **User State**:
+   - Keep authentication state in sync
+   - Handle edge cases (sign-out, token expiration)
+   - Implement proper error recovery
+
+3. **Database Operations**:
+   - Always pass auth token to Supabase operations
+   - Use proper error handling
+   - Implement retry logic for failed operations
+
+4. **Security**:
+   - Follow principle of least privilege
+   - Implement proper RLS policies
+   - Validate user input
+   - Use prepared statements 

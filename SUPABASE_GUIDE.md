@@ -11,6 +11,11 @@ This guide explains how to use Supabase in the Građanski Zahtevi project, inclu
 - [Database Schema](#database-schema)
 - [Limitations and Gotchas](#limitations-and-gotchas)
 - [Troubleshooting](#troubleshooting)
+- [Database Operations and Error Handling](#database-operations-and-error-handling)
+- [Common Database Operations](#common-database-operations)
+- [Error Handling Patterns](#error-handling-patterns)
+- [Common Patterns](#common-patterns)
+- [Best Practices](#best-practices)
 
 ## Setup and Configuration
 
@@ -377,6 +382,355 @@ For deployment-related issues:
 1. Verify that environment variables are correctly set in your deployment environment
 2. Check that CORS settings in Supabase allow requests from your deployment domain
 3. Ensure your build process correctly includes all necessary dependencies
+
+## Database Operations and Error Handling
+
+### Common Database Operations
+
+#### 1. Inserting Data
+
+When inserting data that requires authentication:
+
+```typescript
+// In src/services/comments.ts
+export async function addComment(
+  userId: string,
+  requestId: string,
+  content: string,
+  parentId?: string | null,
+  authToken?: string | null
+): Promise<Comment> {
+  const { data, error } = await getSupabaseClient(authToken)
+    .from('comments')
+    .insert({
+      user_id: userId,
+      request_id: requestId,
+      content,
+      parent_id: parentId
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error adding comment:', error);
+    throw new Error('Failed to add comment');
+  }
+  
+  return data;
+}
+```
+
+Key points:
+- Always pass auth token for authenticated operations
+- Use proper error handling
+- Return typed data
+
+#### 2. Updating Data
+
+When updating data with authentication checks:
+
+```typescript
+// In src/services/comments.ts
+export async function updateComment(
+  commentId: string,
+  userId: string,
+  content: string
+): Promise<Comment> {
+  // First check if the user is the owner of the comment
+  const { data: comment, error: fetchError } = await getSupabaseClient()
+    .from('comments')
+    .select('*')
+    .eq('id', commentId)
+    .single();
+  
+  if (fetchError) {
+    console.error(`Error fetching comment ${commentId}:`, fetchError);
+    throw new Error(`Failed to fetch comment ${commentId}`);
+  }
+  
+  if (comment.user_id !== userId) {
+    throw new Error('You do not have permission to edit this comment');
+  }
+  
+  // Update the comment
+  const { data, error } = await getSupabaseClient()
+    .from('comments')
+    .update({
+      content,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', commentId)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error(`Error updating comment ${commentId}:`, error);
+    throw new Error(`Failed to update comment ${commentId}`);
+  }
+  
+  return data;
+}
+```
+
+Key points:
+- Verify ownership before updates
+- Handle errors appropriately
+- Update timestamps
+
+#### 3. Deleting Data
+
+When deleting data with proper cleanup:
+
+```typescript
+// In src/services/comments.ts
+export async function deleteComment(
+  commentId: string,
+  userId: string,
+  isAdmin: boolean = false
+): Promise<void> {
+  // First check if the user is the owner of the comment or an admin
+  if (!isAdmin) {
+    const { data: comment, error: fetchError } = await getSupabaseClient()
+      .from('comments')
+      .select('*')
+      .eq('id', commentId)
+      .single();
+    
+    if (fetchError) {
+      console.error(`Error fetching comment ${commentId}:`, fetchError);
+      throw new Error(`Failed to fetch comment ${commentId}`);
+    }
+    
+    if (comment.user_id !== userId) {
+      throw new Error('You do not have permission to delete this comment');
+    }
+  }
+  
+  // Delete all comment votes first
+  const { error: voteDeleteError } = await getSupabaseClient()
+    .from('comment_votes')
+    .delete()
+    .eq('comment_id', commentId);
+  
+  if (voteDeleteError) {
+    console.error(`Error deleting votes for comment ${commentId}:`, voteDeleteError);
+    throw new Error(`Failed to delete votes for comment ${commentId}`);
+  }
+  
+  // Delete the comment
+  const { error } = await getSupabaseClient()
+    .from('comments')
+    .delete()
+    .eq('id', commentId);
+  
+  if (error) {
+    console.error(`Error deleting comment ${commentId}:`, error);
+    throw new Error(`Failed to delete comment ${commentId}`);
+  }
+}
+```
+
+Key points:
+- Handle cascading deletes
+- Check permissions
+- Clean up related data
+
+### Error Handling Patterns
+
+#### 1. Common Error Types
+
+```typescript
+// In src/lib/errors.ts
+export class SupabaseError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: any
+  ) {
+    super(message);
+    this.name = 'SupabaseError';
+  }
+}
+
+export function handleSupabaseError(error: any): never {
+  if (error.code === 'PGRST301') {
+    throw new SupabaseError(
+      'Authentication required',
+      'AUTH_REQUIRED',
+      { status: 401 }
+    );
+  }
+  
+  if (error.code === '42501') {
+    throw new SupabaseError(
+      'Permission denied',
+      'PERMISSION_DENIED',
+      { status: 403 }
+    );
+  }
+  
+  throw new SupabaseError(
+    error.message || 'Unknown error',
+    error.code || 'UNKNOWN_ERROR',
+    { status: 500 }
+  );
+}
+```
+
+#### 2. Error Recovery
+
+```typescript
+// In src/hooks/use-queries.ts
+export function useAddComment() {
+  const queryClient = useQueryClient();
+  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 2;
+
+  return useMutation({
+    mutationFn: async ({ 
+      requestId, 
+      content, 
+      parentId 
+    }: { 
+      requestId: string; 
+      content: string; 
+      parentId?: string | null;
+    }) => {
+      if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
+      
+      try {
+        const authToken = await getCurrentAuthToken();
+        return commentsService.addComment(supabaseUser.id, requestId, content, parentId, authToken);
+      } catch (error) {
+        if (error instanceof SupabaseError && 
+            error.code === 'AUTH_REQUIRED' && 
+            retryCount < MAX_RETRIES) {
+          setRetryCount(count => count + 1);
+          // Force token refresh and retry
+          const authToken = await getCurrentAuthToken(true);
+          return commentsService.addComment(supabaseUser.id, requestId, content, parentId, authToken);
+        }
+        throw error;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['comments', variables.requestId] });
+    },
+  });
+}
+```
+
+### Common Patterns
+
+#### 1. Data Fetching with Authentication
+
+```typescript
+// In src/hooks/use-queries.ts
+export function useComments(requestId: string, includeVotes: boolean = false) {
+  return useQuery({
+    queryKey: ['comments', requestId, { includeVotes }],
+    queryFn: () => commentsService.getCommentsForRequest(requestId, includeVotes),
+    enabled: !!requestId,
+  });
+}
+```
+
+#### 2. Mutations with Error Handling
+
+```typescript
+// In src/hooks/use-queries.ts
+export function useVoteOnComment() {
+  const queryClient = useQueryClient();
+  const { supabaseUser } = useSupabaseAuth();
+
+  return useMutation({
+    mutationFn: ({ 
+      commentId, 
+      value, 
+      requestId 
+    }: { 
+      commentId: string; 
+      value: -1 | 1;
+      requestId: string;
+    }) => {
+      if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
+      return commentsService.voteOnComment(supabaseUser.id, commentId, value);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ 
+        queryKey: ['comments', variables.requestId, { includeVotes: true }] 
+      });
+    },
+  });
+}
+```
+
+#### 3. Type Safety
+
+```typescript
+// In src/types/supabase.ts
+export type Database = {
+  public: {
+    Tables: {
+      comments: {
+        Row: {
+          id: string;
+          user_id: string;
+          request_id: string;
+          content: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          request_id: string;
+          content: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          request_id?: string;
+          content?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      // ... other tables
+    };
+  };
+};
+```
+
+### Best Practices
+
+1. **Error Handling**:
+   - Use custom error classes
+   - Implement proper error recovery
+   - Log errors appropriately
+
+2. **Authentication**:
+   - Always pass auth tokens
+   - Handle token expiration
+   - Implement retry logic
+
+3. **Data Operations**:
+   - Use proper types
+   - Implement proper validation
+   - Handle edge cases
+
+4. **Performance**:
+   - Use appropriate indexes
+   - Implement caching
+   - Optimize queries
+
+5. **Security**:
+   - Use RLS policies
+   - Validate input
+   - Handle permissions properly
 
 ## Conclusion
 
