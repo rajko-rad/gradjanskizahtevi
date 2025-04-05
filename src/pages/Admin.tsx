@@ -23,13 +23,9 @@ export default function Admin() {
   const [showNewRequest, setShowNewRequest] = useState(false);
 
   useEffect(() => {
-    if (!isLoaded) {
-      console.log('Clerk not loaded yet');
-      return;
-    }
+    if (!isLoaded) return;
 
     if (!user) {
-      console.log('No user found, redirecting to home');
       navigate('/');
       return;
     }
@@ -42,8 +38,6 @@ export default function Admin() {
           return;
         }
 
-        console.log('Checking admin status for email:', email);
-
         // First, let's verify the admins table exists and is accessible
         const { data: tableCheck, error: tableError } = await supabase
           .from('admins')
@@ -54,8 +48,6 @@ export default function Admin() {
           console.error('Error accessing admins table:', tableError);
           return;
         }
-
-        console.log('Admins table is accessible');
 
         // Now check if the user is an admin
         const { data, error } = await supabase
@@ -70,15 +62,7 @@ export default function Admin() {
         }
 
         console.log('Admin check result:', data);
-        const isUserAdmin = !!data;
-        setIsAdmin(isUserAdmin);
-
-        if (isUserAdmin) {
-          console.log('User is an admin, proceeding to fetch data');
-          await fetchData();
-        } else {
-          console.log('User is not an admin');
-        }
+        setIsAdmin(!!data);
       } catch (error) {
         console.error('Error checking admin status:', error);
       }
@@ -88,8 +72,9 @@ export default function Admin() {
   }, [user, isLoaded, navigate]);
 
   const fetchData = async () => {
+    if (!isAdmin) return;
+
     try {
-      console.log('Starting data fetch');
       setLoading(true);
       setError(null);
 
@@ -101,21 +86,11 @@ export default function Admin() {
         supabase.from('requests').select('*').order('created_at', { ascending: false })
       ]);
 
-      console.log('Categories response:', categoriesResponse);
-      console.log('Requests response:', requestsResponse);
-
-      if (categoriesResponse.error) {
-        console.error('Categories error:', categoriesResponse.error);
-        throw categoriesResponse.error;
-      }
-      if (requestsResponse.error) {
-        console.error('Requests error:', requestsResponse.error);
-        throw requestsResponse.error;
-      }
+      if (categoriesResponse.error) throw categoriesResponse.error;
+      if (requestsResponse.error) throw requestsResponse.error;
 
       setCategories(categoriesResponse.data || []);
       setRequests(requestsResponse.data || []);
-      console.log('Data fetch completed successfully');
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'An error occurred while fetching data');
@@ -124,8 +99,16 @@ export default function Admin() {
     }
   };
 
+  useEffect(() => {
+    if (isAdmin) {
+      fetchData();
+    }
+  }, [isAdmin]);
+
   const handleDeleteRequest = async (requestId: string) => {
-    if (!confirm('Are you sure you want to delete this request?')) return;
+    if (!confirm('Are you sure you want to delete this request?')) {
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -134,10 +117,10 @@ export default function Admin() {
         .eq('id', requestId);
 
       if (error) throw error;
-
-      setRequests(requests.filter(r => r.id !== requestId));
+      fetchData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error deleting request:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while deleting the request');
     }
   };
 

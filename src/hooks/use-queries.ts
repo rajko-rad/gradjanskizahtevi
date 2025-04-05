@@ -7,6 +7,7 @@ import * as votesService from '@/services/votes';
 import * as commentsService from '@/services/comments';
 import * as suggestedRequestsService from '@/services/suggestedRequests';
 import * as usersService from '@/services/users';
+import * as timelineEventsService from '@/services/timelineEvents';
 import { useState, useRef, useEffect } from 'react';
 
 // Debug mode toggle - only in development
@@ -745,5 +746,24 @@ export function useIsAdmin(userId: string | null) {
       return usersService.isUserAdmin(userId);
     },
     enabled: !!userId,
+  });
+}
+
+// ---------------------- Timeline Events Queries ----------------------
+
+export function useTimelineEvents() {
+  return useQuery({
+    queryKey: ['timelineEvents'],
+    queryFn: timelineEventsService.getTimelineEvents,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+export function useTimelineEventsForRequest(requestId: string) {
+  return useQuery({
+    queryKey: ['timelineEvents', requestId],
+    queryFn: () => timelineEventsService.getTimelineEventsForRequest(requestId),
+    enabled: !!requestId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 } 

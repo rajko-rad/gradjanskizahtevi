@@ -1,7 +1,6 @@
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { VoteCard } from "@/components/VoteCard";
-import { categories, requests, mockComments } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { SuggestedRequestsSection } from "@/components/SuggestedRequestsSection";
 import { 
@@ -12,42 +11,21 @@ import {
 } from "lucide-react";
 import { useAuth, useUser, SignInButton, SignUpButton } from "@clerk/clerk-react";
 import { Link } from "react-router-dom";
+import { useCategories, useRequests, useTimelineEvents } from "@/hooks/use-queries";
 
 const Index = () => {
   const { isSignedIn } = useAuth();
   const { user } = useUser();
   
-  // Timeline/events data
-  const timelineEvents = [
-    {
-      id: 1,
-      date: "15. april 2023.",
-      title: "Protest studenata",
-      description: "Studenti Univerziteta u Beogradu organizovali protest i postavili zahteve za reformu obrazovnog sistema.",
-      source: "Studentski parlament"
-    },
-    {
-      id: 2,
-      date: "23. maj 2023.",
-      title: "Građanski protest 'Srbija protiv nasilja'",
-      description: "Masovni protesti širom Srbije nakon tragičnih događaja, sa zahtevima za promene u društvu.",
-      source: "Građanske organizacije"
-    },
-    {
-      id: 3,
-      date: "7. jul 2023.",
-      title: "Zahtevi akademske zajednice",
-      description: "Grupa profesora i akademika objavila dokument sa zahtevima za reformu javnih institucija.",
-      source: "Akademska zajednica"
-    },
-    {
-      id: 4,
-      date: "12. decembar 2023.",
-      title: "Predlog izmena izbornog zakona",
-      description: "Opozicione partije predstavile predlog izmena izbornog zakona za fer i slobodne izbore.",
-      source: "Opozicione partije"
-    }
-  ];
+  // Fetch data from Supabase
+  const { data: categories = [], isLoading: categoriesLoading } = useCategories();
+  const { data: requests = [], isLoading: requestsLoading } = useRequests();
+  const { data: timelineEvents = [], isLoading: timelineLoading } = useTimelineEvents();
+  
+  // If data is still loading, show a simple loading message
+  if (categoriesLoading || requestsLoading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -73,7 +51,7 @@ const Index = () => {
                   className="text-serbia-blue border-serbia-blue/50 hover:bg-serbia-blue/10"
                   onClick={() => document.getElementById(category.id)?.scrollIntoView({ behavior: 'smooth' })}
                 >
-                  {category.shortTitle}
+                  {category.short_title}
                 </Button>
               ))}
             </div>
@@ -85,7 +63,7 @@ const Index = () => {
       <section className="py-16">
         <div className="container px-4 md:px-6">
           {categories.map((category) => {
-            const categoryRequests = requests.filter(req => req.categoryId === category.id);
+            const categoryRequests = requests.filter(req => req.category_id === category.id);
             
             if (categoryRequests.length === 0) return null;
             
@@ -94,15 +72,13 @@ const Index = () => {
                 <div className="border-b-2 pb-4 mb-8 border-serbia-blue/20">
                   <div className="flex justify-between items-center mb-2">
                     <h2 className="text-2xl font-bold text-serbia-blue">{category.title}</h2>
-                    {category.resources && category.resources.length > 0 && (
-                      <a 
-                        href="#" 
-                        className="inline-flex items-center text-sm text-gray-500 hover:text-serbia-blue transition-colors"
-                      >
-                        <FileText className="mr-1.5 h-4 w-4" />
-                        Resursi
-                      </a>
-                    )}
+                    <a 
+                      href="#" 
+                      className="inline-flex items-center text-sm text-gray-500 hover:text-serbia-blue transition-colors"
+                    >
+                      <FileText className="mr-1.5 h-4 w-4" />
+                      Resursi
+                    </a>
                   </div>
                   <p className="text-gray-600 mt-2">{category.description}</p>
                 </div>
@@ -118,7 +94,7 @@ const Index = () => {
                         options={request.options}
                         min={request.min}
                         max={request.max}
-                        hasComments={request.hasComments}
+                        hasComments={request.has_comments}
                       />
                     </div>
                   ))}
