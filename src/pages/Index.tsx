@@ -92,27 +92,19 @@ const Index = () => {
             return (
               <div key={category.id} id={category.id} className="mb-20">
                 <div className="border-b-2 pb-4 mb-8 border-serbia-blue/20">
-                  <h2 className="text-2xl font-bold text-serbia-blue">{category.title}</h2>
+                  <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-2xl font-bold text-serbia-blue">{category.title}</h2>
+                    {category.resources && category.resources.length > 0 && (
+                      <a 
+                        href="#" 
+                        className="inline-flex items-center text-sm text-gray-500 hover:text-serbia-blue transition-colors"
+                      >
+                        <FileText className="mr-1.5 h-4 w-4" />
+                        Resursi
+                      </a>
+                    )}
+                  </div>
                   <p className="text-gray-600 mt-2">{category.description}</p>
-                  
-                  {/* Resources by category */}
-                  {category.resources && category.resources.length > 0 && (
-                    <div className="mt-4 pt-2 border-t border-serbia-blue/10">
-                      <h3 className="text-sm font-medium text-gray-700 mb-2">Resursi i više informacija:</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {category.resources.map((resource, index) => (
-                          <a 
-                            key={index} 
-                            href={resource.url} 
-                            className="inline-flex items-center text-xs font-medium px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full hover:bg-serbia-blue/10 hover:text-serbia-blue"
-                          >
-                            <FileText className="mr-1 h-3 w-3" />
-                            {resource.title}
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
