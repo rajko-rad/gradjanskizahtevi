@@ -10,8 +10,7 @@ export type Resource = Database['public']['Tables']['resources']['Row'];
 export async function getCategories(): Promise<(Category & { resources: Resource[] })[]> {
   const { data: categories, error: categoriesError } = await getSupabaseClient()
     .from('categories')
-    .select('*')
-    .order('id');
+    .select('*');
   
   if (categoriesError) {
     console.error('Error fetching categories:', categoriesError);
@@ -28,8 +27,29 @@ export async function getCategories(): Promise<(Category & { resources: Resource
     throw new Error('Failed to fetch resources');
   }
 
+  // Sort categories to match the original mockData order
+  const categoryOrder = ['media', 'elections', 'security', 'judiciary', 'government'];
+  
+  // Sort the categories based on the order in categoryOrder
+  const sortedCategories = [...categories].sort((a, b) => {
+    const indexA = categoryOrder.indexOf(a.id);
+    const indexB = categoryOrder.indexOf(b.id);
+    
+    // If both categories are in our order list, sort by that order
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB;
+    }
+    
+    // If only one is in our order list, put it first
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    
+    // For categories not in our order list, maintain their original order
+    return 0;
+  });
+
   // Group resources by category
-  return categories.map(category => ({
+  return sortedCategories.map(category => ({
     ...category,
     resources: resources.filter(resource => resource.category_id === category.id)
   }));

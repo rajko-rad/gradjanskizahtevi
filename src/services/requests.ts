@@ -55,8 +55,7 @@ export async function getRequestsByCategory(categoryId: string): Promise<(Reques
   const { data: requests, error: requestsError } = await supabase
     .from('requests')
     .select('*')
-    .eq('category_id', categoryId)
-    .order('id');
+    .eq('category_id', categoryId);
   
   if (requestsError) {
     console.error(`Error fetching requests for category ${categoryId}:`, requestsError);
@@ -67,8 +66,38 @@ export async function getRequestsByCategory(categoryId: string): Promise<(Reques
     return [];
   }
 
+  // Define the order for requests based on mock data
+  const requestOrder: Record<string, string[]> = {
+    'media': ['rts', 'rem'],
+    'elections': ['voter-lists'],
+    'security': ['bia'],
+    'judiciary': ['zagorka'],
+    'government': ['transition-gov', 'transition-period', 'transition-composition', 'opposition-list']
+  };
+
+  // Sort requests based on the predefined order
+  const sortedRequests = [...requests].sort((a, b) => {
+    // Get order for current category
+    const order = requestOrder[categoryId] || [];
+    
+    const indexA = order.indexOf(a.id);
+    const indexB = order.indexOf(b.id);
+    
+    // If both requests are in our order list, sort by that order
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB;
+    }
+    
+    // If only one is in our order list, put it first
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    
+    // For requests not in our order list, maintain their original order
+    return 0;
+  });
+
   // Get all request IDs
-  const requestIds = requests.map(request => request.id);
+  const requestIds = sortedRequests.map(request => request.id);
   
   // Fetch options for these requests
   const { data: options, error: optionsError } = await supabase
@@ -82,7 +111,7 @@ export async function getRequestsByCategory(categoryId: string): Promise<(Reques
   }
 
   // Group options by request
-  return requests.map(request => ({
+  return sortedRequests.map(request => ({
     ...request,
     options: options?.filter(option => option.request_id === request.id) || []
   }));

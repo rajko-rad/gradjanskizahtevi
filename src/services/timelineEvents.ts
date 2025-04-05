@@ -18,15 +18,41 @@ export interface TimelineEvent {
 export async function getTimelineEvents(): Promise<TimelineEvent[]> {
   const { data: events, error } = await getSupabaseClient()
     .from('timeline_events')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select('*');
   
   if (error) {
     console.error('Error fetching timeline events:', error);
     throw new Error('Failed to fetch timeline events');
   }
 
-  return events;
+  // Sort events to match the original order in mockData
+  // The mock data had these dates in this order:
+  // '15. april 2023.', '23. maj 2023.', '7. jul 2023.', '12. decembar 2023.'
+  const dateOrder = [
+    '15. april 2023.',
+    '23. maj 2023.',
+    '7. jul 2023.',
+    '12. decembar 2023.'
+  ];
+
+  const sortedEvents = [...events].sort((a, b) => {
+    const indexA = dateOrder.indexOf(a.date);
+    const indexB = dateOrder.indexOf(b.date);
+    
+    // If both events have dates in our order list, sort by that order
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB;
+    }
+    
+    // If only one has a date in our order list, put it first
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    
+    // For events with dates not in our order list, use created_at for ordering (newest first)
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  return sortedEvents;
 }
 
 /**
