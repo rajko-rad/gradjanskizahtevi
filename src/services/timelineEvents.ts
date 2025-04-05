@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/lib/clerk-supabase';
+import { TIMELINE_DATE_ORDER } from '@/config/mockDataOrder';
 
 // Define the TimelineEvent type based on the database schema
 export interface TimelineEvent {
@@ -25,19 +26,9 @@ export async function getTimelineEvents(): Promise<TimelineEvent[]> {
     throw new Error('Failed to fetch timeline events');
   }
 
-  // Sort events to match the original order in mockData
-  // The mock data had these dates in this order:
-  // '15. april 2023.', '23. maj 2023.', '7. jul 2023.', '12. decembar 2023.'
-  const dateOrder = [
-    '15. april 2023.',
-    '23. maj 2023.',
-    '7. jul 2023.',
-    '12. decembar 2023.'
-  ];
-
   const sortedEvents = [...events].sort((a, b) => {
-    const indexA = dateOrder.indexOf(a.date);
-    const indexB = dateOrder.indexOf(b.date);
+    const indexA = TIMELINE_DATE_ORDER.indexOf(a.date);
+    const indexB = TIMELINE_DATE_ORDER.indexOf(b.date);
     
     // If both events have dates in our order list, sort by that order
     if (indexA !== -1 && indexB !== -1) {

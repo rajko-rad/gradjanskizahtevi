@@ -1,4 +1,5 @@
 import { getSupabaseClient, anonClient } from '@/lib/clerk-supabase';
+import { REQUEST_ORDER } from '@/config/mockDataOrder';
 import type { Database } from '@/types/supabase';
 
 // Request with additional properties
@@ -66,19 +67,10 @@ export async function getRequestsByCategory(categoryId: string): Promise<(Reques
     return [];
   }
 
-  // Define the order for requests based on mock data
-  const requestOrder: Record<string, string[]> = {
-    'media': ['rts', 'rem'],
-    'elections': ['voter-lists'],
-    'security': ['bia'],
-    'judiciary': ['zagorka'],
-    'government': ['transition-gov', 'transition-period', 'transition-composition', 'opposition-list']
-  };
-
   // Sort requests based on the predefined order
   const sortedRequests = [...requests].sort((a, b) => {
     // Get order for current category
-    const order = requestOrder[categoryId] || [];
+    const order = REQUEST_ORDER[categoryId] || [];
     
     const indexA = order.indexOf(a.id);
     const indexB = order.indexOf(b.id);
@@ -92,7 +84,14 @@ export async function getRequestsByCategory(categoryId: string): Promise<(Reques
     if (indexA !== -1) return -1;
     if (indexB !== -1) return 1;
     
-    // For requests not in our order list, maintain their original order
+    // Special handling for government category - keep new items at the end
+    if (categoryId === 'government') {
+      // For new government requests not in our predefined order, 
+      // sort by creation date (newest last) to maintain stability
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    
+    // For requests not in our order list in other categories, maintain their original order
     return 0;
   });
 

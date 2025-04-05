@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/lib/clerk-supabase';
+import { CATEGORY_ORDER } from '@/config/mockDataOrder';
 import type { Database } from '@/types/supabase';
 
 export type Category = Database['public']['Tables']['categories']['Row'];
@@ -28,12 +29,9 @@ export async function getCategories(): Promise<(Category & { resources: Resource
   }
 
   // Sort categories to match the original mockData order
-  const categoryOrder = ['media', 'elections', 'security', 'judiciary', 'government'];
-  
-  // Sort the categories based on the order in categoryOrder
   const sortedCategories = [...categories].sort((a, b) => {
-    const indexA = categoryOrder.indexOf(a.id);
-    const indexB = categoryOrder.indexOf(b.id);
+    const indexA = CATEGORY_ORDER.indexOf(a.id);
+    const indexB = CATEGORY_ORDER.indexOf(b.id);
     
     // If both categories are in our order list, sort by that order
     if (indexA !== -1 && indexB !== -1) {
