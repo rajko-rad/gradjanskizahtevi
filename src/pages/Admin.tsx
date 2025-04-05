@@ -23,27 +23,21 @@ export default function Admin() {
   const [showNewRequest, setShowNewRequest] = useState(false);
 
   useEffect(() => {
-    console.log('Admin page mounted');
-    console.log('User loaded:', isLoaded);
-    console.log('User:', user);
+    if (!isLoaded) return;
 
-    if (isLoaded && !user) {
-      console.log('No user, redirecting to home');
+    if (!user) {
       navigate('/');
       return;
     }
 
     const checkAdmin = async () => {
-      if (!user?.emailAddresses?.[0]?.emailAddress) {
-        console.log('No email found for user');
-        navigate('/');
-        return;
-      }
-
-      const email = user.emailAddresses[0].emailAddress;
-      console.log('Checking admin status for email:', email);
-
       try {
+        const email = user.emailAddresses[0]?.emailAddress;
+        if (!email) {
+          console.error('No email found for user');
+          return;
+        }
+
         const { data, error } = await supabase
           .from('admins')
           .select('email')
@@ -52,15 +46,12 @@ export default function Admin() {
 
         if (error) {
           console.error('Admin check error:', error);
-          navigate('/');
           return;
         }
 
-        console.log('Admin check result:', data);
         setIsAdmin(!!data);
       } catch (error) {
         console.error('Error checking admin status:', error);
-        navigate('/');
       }
     };
 
@@ -118,16 +109,26 @@ export default function Admin() {
     }
   };
 
-  if (loading) {
-    console.log('Loading state');
+  if (!isLoaded) {
     return <div>Loading...</div>;
   }
+
+  if (!user) {
+    return null;
+  }
+
+  if (!isAdmin) {
+    return <div>Access denied. You must be an admin to view this page.</div>;
+  }
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
   if (error) {
-    console.log('Error state:', error);
     return <div>Error: {error}</div>;
   }
 
-  console.log('Rendering admin interface');
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Admin Dashboard</h1>
