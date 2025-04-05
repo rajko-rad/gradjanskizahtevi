@@ -23,16 +23,25 @@ export default function Admin() {
   const [showNewRequest, setShowNewRequest] = useState(false);
 
   useEffect(() => {
+    console.log('Admin page mounted');
+    console.log('User loaded:', isLoaded);
+    console.log('User:', user);
+
     if (isLoaded && !user) {
+      console.log('No user, redirecting to home');
       navigate('/');
       return;
     }
 
     const checkAdmin = async () => {
+      console.log('Checking admin status');
       if (!user?.primaryEmailAddress?.emailAddress) {
+        console.log('No email address found');
         navigate('/');
         return;
       }
+
+      console.log('Checking email:', user.primaryEmailAddress.emailAddress);
 
       try {
         const { data, error } = await supabase
@@ -41,16 +50,21 @@ export default function Admin() {
           .eq('email', user.primaryEmailAddress.emailAddress)
           .single();
 
+        console.log('Admin check result:', { data, error });
+
         if (error) throw error;
         
         setIsAdmin(!!data);
         if (!data) {
+          console.log('Not an admin, redirecting');
           navigate('/');
           return;
         }
 
+        console.log('Admin check passed, fetching data');
         fetchData();
       } catch (err) {
+        console.error('Admin check error:', err);
         setError(err instanceof Error ? err.message : 'An error occurred');
         navigate('/');
       }
@@ -60,11 +74,14 @@ export default function Admin() {
   }, [user, isLoaded, navigate]);
 
   const fetchData = async () => {
+    console.log('Fetching data');
     try {
       const [categoriesResponse, requestsResponse] = await Promise.all([
         supabase.from('categories').select('*'),
         supabase.from('requests').select('*')
       ]);
+
+      console.log('Fetch results:', { categoriesResponse, requestsResponse });
 
       if (categoriesResponse.error) throw categoriesResponse.error;
       if (requestsResponse.error) throw requestsResponse.error;
@@ -72,6 +89,7 @@ export default function Admin() {
       setCategories(categoriesResponse.data || []);
       setRequests(requestsResponse.data || []);
     } catch (err) {
+      console.error('Fetch error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
@@ -95,9 +113,16 @@ export default function Admin() {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error}</div>;
+  if (loading) {
+    console.log('Loading state');
+    return <div>Loading...</div>;
+  }
+  if (error) {
+    console.log('Error state:', error);
+    return <div>Error: {error}</div>;
+  }
 
+  console.log('Rendering admin interface');
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Admin Dashboard</h1>
