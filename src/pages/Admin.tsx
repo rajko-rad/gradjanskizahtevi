@@ -34,38 +34,32 @@ export default function Admin() {
     }
 
     const checkAdmin = async () => {
-      console.log('Checking admin status');
-      if (!user?.primaryEmailAddress?.emailAddress) {
-        console.log('No email address found');
+      if (!user?.emailAddresses?.[0]?.emailAddress) {
+        console.log('No email found for user');
         navigate('/');
         return;
       }
 
-      console.log('Checking email:', user.primaryEmailAddress.emailAddress);
+      const email = user.emailAddresses[0].emailAddress;
+      console.log('Checking admin status for email:', email);
 
       try {
         const { data, error } = await supabase
           .from('admins')
           .select('email')
-          .eq('email', user.primaryEmailAddress.emailAddress)
+          .eq('email', email)
           .single();
 
-        console.log('Admin check result:', { data, error });
-
-        if (error) throw error;
-        
-        setIsAdmin(!!data);
-        if (!data) {
-          console.log('Not an admin, redirecting');
+        if (error) {
+          console.error('Admin check error:', error);
           navigate('/');
           return;
         }
 
-        console.log('Admin check passed, fetching data');
-        fetchData();
-      } catch (err) {
-        console.error('Admin check error:', err);
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        console.log('Admin check result:', data);
+        setIsAdmin(!!data);
+      } catch (error) {
+        console.error('Error checking admin status:', error);
         navigate('/');
       }
     };
@@ -74,14 +68,19 @@ export default function Admin() {
   }, [user, isLoaded, navigate]);
 
   const fetchData = async () => {
-    console.log('Fetching data');
-    try {
-      const [categoriesResponse, requestsResponse] = await Promise.all([
-        supabase.from('categories').select('*'),
-        supabase.from('requests').select('*')
-      ]);
+    if (!isAdmin) return;
 
-      console.log('Fetch results:', { categoriesResponse, requestsResponse });
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [
+        categoriesResponse,
+        requestsResponse
+      ] = await Promise.all([
+        supabase.from('categories').select('*').order('name'),
+        supabase.from('requests').select('*').order('created_at', { ascending: false })
+      ]);
 
       if (categoriesResponse.error) throw categoriesResponse.error;
       if (requestsResponse.error) throw requestsResponse.error;
@@ -89,12 +88,18 @@ export default function Admin() {
       setCategories(categoriesResponse.data || []);
       setRequests(requestsResponse.data || []);
     } catch (err) {
-      console.error('Fetch error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error fetching data:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching data');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchData();
+    }
+  }, [isAdmin]);
 
   const handleDeleteRequest = async (requestId: string) => {
     if (!confirm('Are you sure you want to delete this request?')) return;
