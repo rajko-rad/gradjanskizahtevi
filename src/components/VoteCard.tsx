@@ -403,50 +403,88 @@ export function VoteCard({
     
     // For range voting, show distribution
     if (type === "range") {
-      // Calculate total votes by summing all values in the breakdown
-      const breakdown = voteStats?.breakdown || {};
-      const totalVotes = Object.values(breakdown).reduce((sum, count) => sum + count, 0);
+      // Calculate total votes for range
+      const rangeVotes = Object.values(voteStats?.breakdown || {}).reduce((sum, count) => sum + count, 0);
       
-      if (totalVotes === 0) return null;
+      // Build distribution data for range votes with proper typing
+      const rangeDistribution: Record<string, number> = {};
       
-      // Find most popular choice
-      let mostPopularValue = min;
-      let maxCount = 0;
-      
+      // Populate the distribution
       for (let i = min; i <= max; i++) {
-        const count = breakdown[i.toString()] || 0;
-        if (count > maxCount) {
-          maxCount = count;
-          mostPopularValue = i;
-        }
+        rangeDistribution[i.toString()] = voteStats?.breakdown?.[i.toString()] || 0;
       }
       
+      // Find popular choices with proper typing
+      const sortedChoices = Object.entries(rangeDistribution)
+        .sort(([, countA], [, countB]) => countB - countA)
+        .slice(0, 3)
+        .filter(([, count]) => count > 0);
+      
       return (
-        <div className="mb-6 bg-gray-50 p-4 rounded-lg">
-          <div className="text-sm font-medium text-gray-700 mb-2">
-            Ukupno glasova: {totalVotes}
+        <div className="mt-4">
+          {rangeVotes > 0 && (
+            <div className="bg-gray-50 p-3 rounded-lg mb-4">
+              <p className="text-sm text-center text-gray-600 mb-2">Ukupno glasova: <span className="font-semibold">{rangeVotes}</span></p>
+              
+              {sortedChoices.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-2 mt-1">
+                  {sortedChoices.map(([value, count]) => (
+                    <div 
+                      key={value} 
+                      className={cn(
+                        "px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1",
+                        value === sortedChoices[0][0] ? "bg-serbia-blue/20 text-serbia-blue" : "bg-gray-200 text-gray-700"
+                      )}
+                    >
+                      {value} meseci
+                      <span className={cn(
+                        "inline-flex items-center justify-center rounded-full px-1.5 text-xs font-bold",
+                        value === sortedChoices[0][0] ? "bg-serbia-blue text-white" : "bg-gray-500 text-white"
+                      )}>
+                        {count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        
+          <div className="mb-2 flex justify-between text-xs text-gray-500">
+            <span>{min} meseci</span>
+            <span>{max} meseci</span>
           </div>
-          <div className="flex flex-col items-center">
-            <div className="w-full text-center mb-1">
-              <span className="text-sm font-medium text-serbia-blue">
-                Najčešći izbor: {mostPopularValue} meseci ({maxCount} glasova)
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-4 flex items-center">
-              {/* Position marker for most popular choice */}
-              <div
-                className="absolute w-2 h-5 bg-serbia-blue rounded"
-                style={{ 
-                  left: `calc(${((mostPopularValue - min) / (max - min)) * 100}% + 16px)`,
-                  marginLeft: "-1px"
-                }}
-              ></div>
-            </div>
-            <div className="w-full flex justify-between text-xs mt-1">
-              <span>{min} meseci</span>
-              <span>{max} meseci</span>
-            </div>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            value={rangeValue}
+            onChange={(e) => setRangeValue(parseInt(e.target.value))}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-serbia-blue"
+            disabled={isAuthLoading || !isSignedIn}
+          />
+          <div className="mt-3 text-center">
+            <span className="text-sm font-medium bg-serbia-blue/10 text-serbia-blue px-3 py-1 rounded-full">
+              {rangeValue} meseci
+            </span>
           </div>
+          <Button 
+            onClick={handleRangeVote}
+            className="w-full mt-6 bg-serbia-blue hover:bg-serbia-blue/90 relative"
+            variant="default"
+            disabled={isAuthLoading || !isSignedIn}
+          >
+            {isLoadingStats ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Glasaj
+            
+            {rangeVotes > 0 && (
+              <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-serbia-blue text-white text-xs font-bold rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center shadow-sm border border-white">
+                {rangeVotes}
+              </div>
+            )}
+          </Button>
         </div>
       );
     }
@@ -473,81 +511,195 @@ export function VoteCard({
         const totalYesNoVotes = yesVotes + noVotes;
         
         return (
-          <div className="flex flex-col sm:flex-row gap-4 mt-4">
-            <Button
-              onClick={() => handleVote("yes")}
-              className={cn(
-                "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-6 text-base",
-                selectedOption === "yes" && "bg-green-100 border-green-300"
-              )}
-              variant="outline"
-              disabled={isDisabled}
-            >
-              {isLoading ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <ThumbsUp className="mr-2 h-5 w-5" />
-              )}
-              <span className="font-medium">Za</span>
-              {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
-            </Button>
-            <Button
-              onClick={() => handleVote("no")}
-              className={cn(
-                "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-6 text-base",
-                selectedOption === "no" && "bg-red-100 border-red-300"
-              )}
-              variant="outline"
-              disabled={isDisabled}
-            >
-              {isLoading ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <ThumbsDown className="mr-2 h-5 w-5" />
-              )}
-              <span className="font-medium">Protiv</span>
-              {selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
-            </Button>
+          <div className="flex flex-col gap-4 mt-4">
+            {/* Vote stats card */}
+            {totalYesNoVotes > 0 && (
+              <div className="w-full bg-gray-50 rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2">
+                {/* Yes votes progress */}
+                <div 
+                  className="relative bg-green-100 py-2 px-3 flex items-center justify-center"
+                  style={{ 
+                    width: totalYesNoVotes > 0 ? `${(yesVotes / totalYesNoVotes) * 100}%` : '50%',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 z-10">
+                    <ThumbsUp className="h-4 w-4 text-green-700" />
+                    <span className="font-semibold text-green-800 text-sm">{yesVotes}</span>
+                  </div>
+                </div>
+                
+                {/* No votes progress */}
+                <div 
+                  className="relative bg-red-100 py-2 px-3 flex items-center justify-center"
+                  style={{ 
+                    width: totalYesNoVotes > 0 ? `${(noVotes / totalYesNoVotes) * 100}%` : '50%',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 z-10">
+                    <ThumbsDown className="h-4 w-4 text-red-700" />
+                    <span className="font-semibold text-red-800 text-sm">{noVotes}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Voting buttons */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Button
+                onClick={() => handleVote("yes")}
+                className={cn(
+                  "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-6 text-base relative",
+                  selectedOption === "yes" && "bg-green-100 border-green-300"
+                )}
+                variant="outline"
+                disabled={isDisabled}
+              >
+                <div className="flex items-center justify-center w-full">
+                  {isLoading ? (
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  ) : (
+                    <ThumbsUp className="mr-2 h-5 w-5" />
+                  )}
+                  <span className="font-medium">Za</span>
+                  {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
+                </div>
+                
+                {yesVotes > 0 && (
+                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-sm">
+                    {yesVotes}
+                  </div>
+                )}
+              </Button>
+              
+              <Button
+                onClick={() => handleVote("no")}
+                className={cn(
+                  "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-6 text-base relative",
+                  selectedOption === "no" && "bg-red-100 border-red-300"
+                )}
+                variant="outline"
+                disabled={isDisabled}
+              >
+                <div className="flex items-center justify-center w-full">
+                  {isLoading ? (
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  ) : (
+                    <ThumbsDown className="mr-2 h-5 w-5" />
+                  )}
+                  <span className="font-medium">Protiv</span>
+                  {selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
+                </div>
+                
+                {noVotes > 0 && (
+                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-sm">
+                    {noVotes}
+                  </div>
+                )}
+              </Button>
+            </div>
           </div>
         );
       case "multiple":
+        const totalMultipleVotes = processedOptions.reduce((sum, option) => sum + (voteStats?.breakdown?.[option] || 0), 0);
+        
         return (
-          <div className="flex flex-col gap-3 mt-6">
+          <div className="flex flex-col gap-3 mt-4">
+            {totalMultipleVotes > 0 && (
+              <div className="bg-gray-50 p-2 rounded-lg mb-2">
+                <p className="text-sm text-center text-gray-600">Ukupno glasova: <span className="font-semibold">{totalMultipleVotes}</span></p>
+              </div>
+            )}
+          
             {processedOptions.map((option, index) => {
               const voteCount = voteStats?.breakdown?.[option] || 0;
+              const percentage = totalMultipleVotes > 0 ? Math.round((voteCount / totalMultipleVotes) * 100) : 0;
+              
               return (
-                <Button
-                  key={index}
-                  onClick={() => handleVote(option)}
-                  className={cn(
-                    "justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all py-5 px-4 h-auto",
-                    selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
-                  )}
-                  variant="outline"
-                  disabled={isDisabled}
-                >
-                  <span className="font-medium">{option}</span>
-                  <span className="flex items-center">
-                    {voteCount > 0 && 
-                      <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+                <div key={index} className="relative">
+                  <Button
+                    onClick={() => handleVote(option)}
+                    className={cn(
+                      "w-full justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all py-5 px-4 h-auto",
+                      selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
+                    )}
+                    variant="outline"
+                    disabled={isDisabled}
+                  >
+                    <span className="font-medium">{option}</span>
+                    <span className="flex items-center">
+                      {isLoading ? (
+                        <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                      ) : selectedOption === option ? (
+                        <CheckCircle2 className="ml-2 h-4 w-4 text-blue-600" />
+                      ) : null}
+                    </span>
+                  </Button>
+                  
+                  {voteCount > 0 && (
+                    <>
+                      {/* Vote count badge */}
+                      <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-blue-500 text-white text-xs font-bold rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center shadow-sm">
                         {voteCount}
-                      </span>
-                    }
-                    {isLoading ? (
-                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                    ) : selectedOption === option ? (
-                      <CheckCircle2 className="ml-2 h-4 w-4 text-blue-600" />
-                    ) : null}
-                  </span>
-                </Button>
+                      </div>
+                      
+                      {/* Progress bar */}
+                      <div className="absolute bottom-0 left-0 h-1 bg-blue-400 rounded-b-md" style={{ width: `${percentage}%` }}></div>
+                    </>
+                  )}
+                </div>
               );
             })}
           </div>
         );
       case "range":
+        // Calculate total votes for range
+        const rangeVotes = Object.values(voteStats?.breakdown || {}).reduce((sum, count) => sum + count, 0);
+        
+        // Build distribution data for range votes with proper typing
+        const rangeDistribution: Record<string, number> = {};
+        
+        // Populate the distribution
+        for (let i = min; i <= max; i++) {
+          rangeDistribution[i.toString()] = voteStats?.breakdown?.[i.toString()] || 0;
+        }
+        
+        // Find popular choices with proper typing
+        const sortedChoices = Object.entries(rangeDistribution)
+          .sort(([, countA], [, countB]) => countB - countA)
+          .slice(0, 3)
+          .filter(([, count]) => count > 0);
+        
         return (
-          <div className="mt-6">
-            <div className="mb-3 flex justify-between text-xs text-gray-500">
+          <div className="mt-4">
+            {rangeVotes > 0 && (
+              <div className="bg-gray-50 p-3 rounded-lg mb-4">
+                <p className="text-sm text-center text-gray-600 mb-2">Ukupno glasova: <span className="font-semibold">{rangeVotes}</span></p>
+                
+                {sortedChoices.length > 0 && (
+                  <div className="flex flex-wrap justify-center gap-2 mt-1">
+                    {sortedChoices.map(([value, count]) => (
+                      <div 
+                        key={value} 
+                        className={cn(
+                          "px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1",
+                          value === sortedChoices[0][0] ? "bg-serbia-blue/20 text-serbia-blue" : "bg-gray-200 text-gray-700"
+                        )}
+                      >
+                        {value} meseci
+                        <span className={cn(
+                          "inline-flex items-center justify-center rounded-full px-1.5 text-xs font-bold",
+                          value === sortedChoices[0][0] ? "bg-serbia-blue text-white" : "bg-gray-500 text-white"
+                        )}>
+                          {count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          
+            <div className="mb-2 flex justify-between text-xs text-gray-500">
               <span>{min} meseci</span>
               <span>{max} meseci</span>
             </div>
@@ -567,7 +719,7 @@ export function VoteCard({
             </div>
             <Button 
               onClick={handleRangeVote}
-              className="w-full mt-6 bg-serbia-blue hover:bg-serbia-blue/90"
+              className="w-full mt-6 bg-serbia-blue hover:bg-serbia-blue/90 relative"
               variant="default"
               disabled={isDisabled}
             >
@@ -575,6 +727,12 @@ export function VoteCard({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Glasaj
+              
+              {rangeVotes > 0 && (
+                <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-serbia-blue text-white text-xs font-bold rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center shadow-sm border border-white">
+                  {rangeVotes}
+                </div>
+              )}
             </Button>
           </div>
         );
