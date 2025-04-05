@@ -480,7 +480,7 @@ export function VoteCard({
             Glasaj
             
             {rangeVotes > 0 && (
-              <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-serbia-blue text-white text-xs font-bold rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center shadow-sm border border-white">
+              <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-serbia-blue text-white text-xs font-bold rounded-full min-w-7 h-7 px-2 flex items-center justify-center shadow-sm border border-white">
                 {rangeVotes}
               </div>
             )}
@@ -517,27 +517,27 @@ export function VoteCard({
               <div className="w-full bg-gray-50 rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2">
                 {/* Yes votes progress */}
                 <div 
-                  className="relative bg-green-100 py-2 px-3 flex items-center justify-center"
+                  className="relative bg-green-100 py-2.5 px-3 flex items-center justify-center"
                   style={{ 
                     width: totalYesNoVotes > 0 ? `${(yesVotes / totalYesNoVotes) * 100}%` : '50%',
                   }}
                 >
                   <div className="flex items-center gap-1.5 z-10">
                     <ThumbsUp className="h-4 w-4 text-green-700" />
-                    <span className="font-semibold text-green-800 text-sm">{yesVotes}</span>
+                    <span className="font-bold text-green-800 text-sm">{yesVotes}</span>
                   </div>
                 </div>
                 
                 {/* No votes progress */}
                 <div 
-                  className="relative bg-red-100 py-2 px-3 flex items-center justify-center"
+                  className="relative bg-red-100 py-2.5 px-3 flex items-center justify-center"
                   style={{ 
                     width: totalYesNoVotes > 0 ? `${(noVotes / totalYesNoVotes) * 100}%` : '50%',
                   }}
                 >
                   <div className="flex items-center gap-1.5 z-10">
                     <ThumbsDown className="h-4 w-4 text-red-700" />
-                    <span className="font-semibold text-red-800 text-sm">{noVotes}</span>
+                    <span className="font-bold text-red-800 text-sm">{noVotes}</span>
                   </div>
                 </div>
               </div>
@@ -565,7 +565,7 @@ export function VoteCard({
                 </div>
                 
                 {yesVotes > 0 && (
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-sm">
+                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-green-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
                     {yesVotes}
                   </div>
                 )}
@@ -591,7 +591,7 @@ export function VoteCard({
                 </div>
                 
                 {noVotes > 0 && (
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-sm">
+                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
                     {noVotes}
                   </div>
                 )}
@@ -638,12 +638,12 @@ export function VoteCard({
                   {voteCount > 0 && (
                     <>
                       {/* Vote count badge */}
-                      <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-blue-500 text-white text-xs font-bold rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center shadow-sm">
+                      <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-blue-600 text-white text-xs font-bold rounded-full min-w-7 h-7 px-2 flex items-center justify-center shadow-sm border border-white">
                         {voteCount}
                       </div>
                       
                       {/* Progress bar */}
-                      <div className="absolute bottom-0 left-0 h-1 bg-blue-400 rounded-b-md" style={{ width: `${percentage}%` }}></div>
+                      <div className="absolute bottom-0 left-0 h-1.5 bg-blue-500 rounded-b-md" style={{ width: `${percentage}%` }}></div>
                     </>
                   )}
                 </div>
@@ -729,7 +729,7 @@ export function VoteCard({
               Glasaj
               
               {rangeVotes > 0 && (
-                <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-serbia-blue text-white text-xs font-bold rounded-full min-w-6 h-6 px-1.5 flex items-center justify-center shadow-sm border border-white">
+                <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-serbia-blue text-white text-xs font-bold rounded-full min-w-7 h-7 px-2 flex items-center justify-center shadow-sm border border-white">
                   {rangeVotes}
                 </div>
               )}
@@ -748,7 +748,6 @@ export function VoteCard({
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>
-        {renderVoteSummary()}
         {renderVoteOptions()}
 
         {/* Comments section */}
