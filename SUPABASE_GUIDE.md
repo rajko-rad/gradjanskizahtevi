@@ -387,350 +387,295 @@ For deployment-related issues:
 
 ### Common Database Operations
 
-#### 1. Inserting Data
+1. **Voting Operations**
+   ```typescript
+   // In src/services/votes.ts
+   export async function castVote(
+     userId: string, 
+     requestId: string, 
+     value: string,
+     authToken?: string | null
+   ): Promise<Vote | null> {
+     // Log detailed params to help with debugging
+     debugLog("castVote called with:", { 
+       userId, 
+       requestId, 
+       value,
+       hasToken: !!authToken 
+     });
 
-When inserting data that requires authentication:
+     // Validate required parameters
+     if (!userId || !requestId || value === undefined) {
+       console.error("Missing required parameters for castVote:", { userId, requestId, value });
+       return null;
+     }
 
-```typescript
-// In src/services/comments.ts
-export async function addComment(
-  userId: string,
-  requestId: string,
-  content: string,
-  parentId?: string | null,
-  authToken?: string | null
-): Promise<Comment> {
-  const { data, error } = await getSupabaseClient(authToken)
-    .from('comments')
-    .insert({
-      user_id: userId,
-      request_id: requestId,
-      content,
-      parent_id: parentId
-    })
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error adding comment:', error);
-    throw new Error('Failed to add comment');
-  }
-  
-  return data;
-}
-```
+     // Use the appropriate client based on token availability
+     const client = getSupabaseClient(authToken);
 
-Key points:
-- Always pass auth token for authenticated operations
-- Use proper error handling
-- Return typed data
+     try {
+       // Check if user already voted for this request
+       const existingVote = await getUserVote(userId, requestId, authToken);
+       
+       // If user already voted, update the vote
+       if (existingVote) {
+         const { data, error } = await client
+           .from('votes')
+           .update({ value, updated_at: new Date().toISOString() })
+           .eq('user_id', userId)
+           .eq('request_id', requestId)
+           .select()
+           .single();
 
-#### 2. Updating Data
+         if (error) {
+           // Special handling for auth errors
+           if (error.code === 'PGRST301' || error.code === '42501' || 
+               error.message?.includes('JWT') || error.message?.includes('token')) {
+             console.warn("Authentication error updating vote:", error.message);
+             return null;
+           }
+           
+           console.error('Error updating vote:', error);
+           return null;
+         }
 
-When updating data with authentication checks:
+         return data;
+       } 
+       // Otherwise, insert a new vote
+       else {
+         const { data, error } = await client
+           .from('votes')
+           .insert({
+             user_id: userId,
+             request_id: requestId,
+             value
+           })
+           .select()
+           .single();
 
-```typescript
-// In src/services/comments.ts
-export async function updateComment(
-  commentId: string,
-  userId: string,
-  content: string
-): Promise<Comment> {
-  // First check if the user is the owner of the comment
-  const { data: comment, error: fetchError } = await getSupabaseClient()
-    .from('comments')
-    .select('*')
-    .eq('id', commentId)
-    .single();
-  
-  if (fetchError) {
-    console.error(`Error fetching comment ${commentId}:`, fetchError);
-    throw new Error(`Failed to fetch comment ${commentId}`);
-  }
-  
-  if (comment.user_id !== userId) {
-    throw new Error('You do not have permission to edit this comment');
-  }
-  
-  // Update the comment
-  const { data, error } = await getSupabaseClient()
-    .from('comments')
-    .update({
-      content,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', commentId)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error updating comment ${commentId}:`, error);
-    throw new Error(`Failed to update comment ${commentId}`);
-  }
-  
-  return data;
-}
-```
+         if (error) {
+           // Special handling for auth errors
+           if (error.code === 'PGRST301' || error.code === '42501' || 
+               error.message?.includes('JWT') || error.message?.includes('token')) {
+             console.warn("Authentication error creating vote:", error.message);
+             return null;
+           }
+           
+           console.error('Error creating vote:', error);
+           return null;
+         }
 
-Key points:
-- Verify ownership before updates
-- Handle errors appropriately
-- Update timestamps
+         return data;
+       }
+     } catch (error) {
+       console.error('Unexpected error in castVote:', error);
+       return null;
+     }
+   }
+   ```
 
-#### 3. Deleting Data
+2. **Comment Operations**
+   ```typescript
+   // In src/services/comments.ts
+   export async function addComment(
+     userId: string,
+     requestId: string,
+     content: string,
+     parentId: string | null = null,
+     authToken?: string | null
+   ): Promise<Comment | null> {
+     // Log detailed params to help with debugging
+     debugLog("addComment called with:", { 
+       userId, 
+       requestId, 
+       content,
+       parentId,
+       hasToken: !!authToken 
+     });
 
-When deleting data with proper cleanup:
+     // Validate required parameters
+     if (!userId || !requestId || !content) {
+       console.error("Missing required parameters for addComment:", { userId, requestId, content });
+       return null;
+     }
 
-```typescript
-// In src/services/comments.ts
-export async function deleteComment(
-  commentId: string,
-  userId: string,
-  isAdmin: boolean = false
-): Promise<void> {
-  // First check if the user is the owner of the comment or an admin
-  if (!isAdmin) {
-    const { data: comment, error: fetchError } = await getSupabaseClient()
-      .from('comments')
-      .select('*')
-      .eq('id', commentId)
-      .single();
-    
-    if (fetchError) {
-      console.error(`Error fetching comment ${commentId}:`, fetchError);
-      throw new Error(`Failed to fetch comment ${commentId}`);
-    }
-    
-    if (comment.user_id !== userId) {
-      throw new Error('You do not have permission to delete this comment');
-    }
-  }
-  
-  // Delete all comment votes first
-  const { error: voteDeleteError } = await getSupabaseClient()
-    .from('comment_votes')
-    .delete()
-    .eq('comment_id', commentId);
-  
-  if (voteDeleteError) {
-    console.error(`Error deleting votes for comment ${commentId}:`, voteDeleteError);
-    throw new Error(`Failed to delete votes for comment ${commentId}`);
-  }
-  
-  // Delete the comment
-  const { error } = await getSupabaseClient()
-    .from('comments')
-    .delete()
-    .eq('id', commentId);
-  
-  if (error) {
-    console.error(`Error deleting comment ${commentId}:`, error);
-    throw new Error(`Failed to delete comment ${commentId}`);
-  }
-}
-```
+     // Use the appropriate client based on token availability
+     const client = getSupabaseClient(authToken);
 
-Key points:
-- Handle cascading deletes
-- Check permissions
-- Clean up related data
+     try {
+       const { data, error } = await client
+         .from('comments')
+         .insert({
+           user_id: userId,
+           request_id: requestId,
+           content,
+           parent_id: parentId
+         })
+         .select()
+         .single();
+
+       if (error) {
+         // Special handling for auth errors
+         if (error.code === 'PGRST301' || error.code === '42501' || 
+             error.message?.includes('JWT') || error.message?.includes('token')) {
+           console.warn("Authentication error adding comment:", error.message);
+           return null;
+         }
+         
+         console.error('Error adding comment:', error);
+         return null;
+       }
+
+       return data;
+     } catch (error) {
+       console.error('Unexpected error in addComment:', error);
+       return null;
+     }
+   }
+   ```
 
 ### Error Handling Patterns
 
-#### 1. Common Error Types
+1. **Authentication Errors**
+   ```typescript
+   // Common auth error codes
+   const AUTH_ERROR_CODES = {
+     JWT_EXPIRED: 'PGRST301',
+     JWT_INVALID: '42501',
+     TOKEN_MISSING: 'PGRST301'
+   };
 
-```typescript
-// In src/lib/errors.ts
-export class SupabaseError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public details?: any
-  ) {
-    super(message);
-    this.name = 'SupabaseError';
-  }
-}
+   // Handle auth errors
+   if (error.code === AUTH_ERROR_CODES.JWT_EXPIRED || 
+       error.code === AUTH_ERROR_CODES.JWT_INVALID ||
+       error.message?.includes('JWT') || 
+       error.message?.includes('token')) {
+     console.warn("Authentication error:", error.message);
+     // Attempt to refresh token or handle error
+     return null;
+   }
+   ```
 
-export function handleSupabaseError(error: any): never {
-  if (error.code === 'PGRST301') {
-    throw new SupabaseError(
-      'Authentication required',
-      'AUTH_REQUIRED',
-      { status: 401 }
-    );
-  }
-  
-  if (error.code === '42501') {
-    throw new SupabaseError(
-      'Permission denied',
-      'PERMISSION_DENIED',
-      { status: 403 }
-    );
-  }
-  
-  throw new SupabaseError(
-    error.message || 'Unknown error',
-    error.code || 'UNKNOWN_ERROR',
-    { status: 500 }
-  );
-}
-```
+2. **Database Errors**
+   ```typescript
+   // Handle database errors
+   if (error) {
+     // Log error details
+     console.error('Database error:', {
+       code: error.code,
+       message: error.message,
+       details: error.details,
+       hint: error.hint
+     });
 
-#### 2. Error Recovery
+     // Return null or throw based on error type
+     if (error.code === '23505') { // Unique violation
+       return null;
+     }
+     throw error;
+   }
+   ```
 
-```typescript
-// In src/hooks/use-queries.ts
-export function useAddComment() {
-  const queryClient = useQueryClient();
-  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
-  const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 2;
-
-  return useMutation({
-    mutationFn: async ({ 
-      requestId, 
-      content, 
-      parentId 
-    }: { 
-      requestId: string; 
-      content: string; 
-      parentId?: string | null;
-    }) => {
-      if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
-      
-      try {
-        const authToken = await getCurrentAuthToken();
-        return commentsService.addComment(supabaseUser.id, requestId, content, parentId, authToken);
-      } catch (error) {
-        if (error instanceof SupabaseError && 
-            error.code === 'AUTH_REQUIRED' && 
-            retryCount < MAX_RETRIES) {
-          setRetryCount(count => count + 1);
-          // Force token refresh and retry
-          const authToken = await getCurrentAuthToken(true);
-          return commentsService.addComment(supabaseUser.id, requestId, content, parentId, authToken);
-        }
-        throw error;
-      }
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['comments', variables.requestId] });
-    },
-  });
-}
-```
+3. **Type Validation**
+   ```typescript
+   // Validate types before database operations
+   if (typeof value !== 'string') {
+     console.error("Invalid value type:", typeof value);
+     return null;
+   }
+   ```
 
 ### Common Patterns
 
-#### 1. Data Fetching with Authentication
+1. **Token Management**
+   ```typescript
+   // Get token with retry logic
+   async function getTokenWithRetry(maxRetries = 3) {
+     let attempts = 0;
+     while (attempts < maxRetries) {
+       try {
+         const token = await getCurrentAuthToken();
+         if (token) return token;
+         attempts++;
+         await new Promise(resolve => setTimeout(resolve, 1000));
+       } catch (error) {
+         console.error("Error getting token:", error);
+         attempts++;
+       }
+     }
+     return null;
+   }
+   ```
 
-```typescript
-// In src/hooks/use-queries.ts
-export function useComments(requestId: string, includeVotes: boolean = false) {
-  return useQuery({
-    queryKey: ['comments', requestId, { includeVotes }],
-    queryFn: () => commentsService.getCommentsForRequest(requestId, includeVotes),
-    enabled: !!requestId,
-  });
-}
-```
+2. **User Synchronization**
+   ```typescript
+   // Sync user with retry logic
+   async function syncUserWithRetry(user: User, maxRetries = 3) {
+     let attempts = 0;
+     while (attempts < maxRetries) {
+       try {
+         const token = await getTokenWithRetry();
+         if (!token) {
+           attempts++;
+           continue;
+         }
 
-#### 2. Mutations with Error Handling
+         const syncedUser = await syncUserWithSupabase(
+           user.id,
+           user.primaryEmailAddress?.emailAddress,
+           user.fullName,
+           user.imageUrl,
+           token
+         );
 
-```typescript
-// In src/hooks/use-queries.ts
-export function useVoteOnComment() {
-  const queryClient = useQueryClient();
-  const { supabaseUser } = useSupabaseAuth();
+         if (syncedUser) return syncedUser;
+         attempts++;
+       } catch (error) {
+         console.error("Error syncing user:", error);
+         attempts++;
+       }
+     }
+     return null;
+   }
+   ```
 
-  return useMutation({
-    mutationFn: ({ 
-      commentId, 
-      value, 
-      requestId 
-    }: { 
-      commentId: string; 
-      value: -1 | 1;
-      requestId: string;
-    }) => {
-      if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
-      return commentsService.voteOnComment(supabaseUser.id, commentId, value);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: ['comments', variables.requestId, { includeVotes: true }] 
-      });
-    },
-  });
-}
-```
-
-#### 3. Type Safety
-
-```typescript
-// In src/types/supabase.ts
-export type Database = {
-  public: {
-    Tables: {
-      comments: {
-        Row: {
-          id: string;
-          user_id: string;
-          request_id: string;
-          content: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          request_id: string;
-          content: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          request_id?: string;
-          content?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      // ... other tables
-    };
-  };
-};
-```
+3. **Query Invalidation**
+   ```typescript
+   // Invalidate queries after mutations
+   const queryClient = useQueryClient();
+   
+   // After successful vote
+   queryClient.invalidateQueries({ 
+     queryKey: ['votes', 'user', userId, requestId] 
+   });
+   queryClient.invalidateQueries({ 
+     queryKey: ['votes', 'stats', requestId] 
+   });
+   ```
 
 ### Best Practices
 
-1. **Error Handling**:
-   - Use custom error classes
-   - Implement proper error recovery
-   - Log errors appropriately
+1. **Error Handling**
+   - Always validate input parameters
+   - Handle authentication errors gracefully
+   - Implement proper error logging
+   - Use appropriate error recovery strategies
 
-2. **Authentication**:
-   - Always pass auth tokens
-   - Handle token expiration
-   - Implement retry logic
+2. **Type Safety**
+   - Use TypeScript for type checking
+   - Validate types before database operations
+   - Use proper type casting in RLS policies
 
-3. **Data Operations**:
-   - Use proper types
-   - Implement proper validation
-   - Handle edge cases
+3. **Performance**
+   - Cache tokens appropriately
+   - Implement retry logic for failed operations
+   - Use proper indexing for queries
 
-4. **Performance**:
-   - Use appropriate indexes
-   - Implement caching
-   - Optimize queries
-
-5. **Security**:
-   - Use RLS policies
-   - Validate input
-   - Handle permissions properly
+4. **Security**
+   - Never expose tokens in client-side code
+   - Implement proper RLS policies
+   - Validate all user input
+   - Use prepared statements
 
 ## Conclusion
 
