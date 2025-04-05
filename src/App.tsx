@@ -10,6 +10,7 @@ import { getSupabaseClient, logTokenInfo } from "@/lib/clerk-supabase";
 import clerkSupabase from "@/lib/clerk-supabase";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import Admin from "./pages/Admin";
 import { useEffect, useMemo, useState, useRef, useCallback, createContext, useContext } from "react";
 
 // Debug mode toggle
@@ -94,10 +95,7 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
       debugLog("Getting fresh token from Clerk");
       
       // Use our improved refreshToken utility
-      const token = await clerkSupabase.refreshToken(
-        () => getToken({ template: 'supabase' }),
-        cachedTokenRef.current
-      );
+      const token = await getToken({ template: 'supabase' });
       
       if (!token) {
         debugLog("No token returned from Clerk");
@@ -303,21 +301,22 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <SupabaseAuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
+    <TooltipProvider>
+      <BrowserRouter>
+        <SupabaseAuthProvider>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="/sign-in/*" element={<SignIn routing="path" path="/sign-in" />} />
             <Route path="/sign-up/*" element={<SignUp routing="path" path="/sign-up" />} />
             <Route path="/user-profile/*" element={<UserProfile routing="path" path="/user-profile" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </SupabaseAuthProvider>
+          <Toaster />
+          <Sonner />
+        </SupabaseAuthProvider>
+      </BrowserRouter>
+    </TooltipProvider>
   </QueryClientProvider>
 );
 
