@@ -535,10 +535,10 @@ export function useComments(requestId: string, includeVotes: boolean = false) {
 
 export function useAddComment() {
   const queryClient = useQueryClient();
-  const { supabaseUser } = useSupabaseAuth();
+  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
 
   return useMutation({
-    mutationFn: ({ 
+    mutationFn: async ({ 
       requestId, 
       content, 
       parentId 
@@ -548,7 +548,8 @@ export function useAddComment() {
       parentId?: string | null;
     }) => {
       if (!supabaseUser?.id) throw new Error('User not authenticated in Supabase');
-      return commentsService.addComment(supabaseUser.id, requestId, content, parentId);
+      const authToken = await getCurrentAuthToken();
+      return commentsService.addComment(supabaseUser.id, requestId, content, parentId, authToken);
     },
     onSuccess: (_, variables) => {
       // Invalidate comments for this request

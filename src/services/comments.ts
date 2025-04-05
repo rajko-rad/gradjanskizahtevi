@@ -91,9 +91,10 @@ export async function addComment(
   userId: string,
   requestId: string,
   content: string,
-  parentId?: string | null
+  parentId?: string | null,
+  authToken?: string | null
 ): Promise<Comment> {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await getSupabaseClient(authToken)
     .from('comments')
     .insert({
       user_id: userId,
