@@ -16,6 +16,7 @@ export default function Admin() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [editingRequest, setEditingRequest] = useState<Request | null>(null);
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -27,17 +28,35 @@ export default function Admin() {
       return;
     }
 
-    // Check if user has admin role
-    const isAdmin = user?.organizationMemberships.some(
-      membership => membership.role === 'admin'
-    );
+    const checkAdmin = async () => {
+      if (!user?.primaryEmailAddress?.emailAddress) {
+        navigate('/');
+        return;
+      }
 
-    if (!isAdmin) {
-      navigate('/');
-      return;
-    }
+      try {
+        const { data, error } = await supabase
+          .from('admins')
+          .select('email')
+          .eq('email', user.primaryEmailAddress.emailAddress)
+          .single();
 
-    fetchData();
+        if (error) throw error;
+        
+        setIsAdmin(!!data);
+        if (!data) {
+          navigate('/');
+          return;
+        }
+
+        fetchData();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+        navigate('/');
+      }
+    };
+
+    checkAdmin();
   }, [user, isLoaded, navigate]);
 
   const fetchData = async () => {
