@@ -121,6 +121,16 @@ export function VoteCard({
     isLoading: isLoadingStats 
   } = useVoteStats(id);
   
+  // Debug vote stats when they change
+  useEffect(() => {
+    console.log(`[Debug VoteCard ${id}] Vote stats data:`, {
+      voteStats,
+      hasBreakdown: voteStats?.breakdown ? Object.keys(voteStats.breakdown).length : 0,
+      breakdown: voteStats?.breakdown,
+      isLoading: isLoadingStats
+    });
+  }, [voteStats, isLoadingStats, id]);
+
   // Fetch user's existing vote
   const { 
     data: userVote, 
@@ -496,6 +506,15 @@ export function VoteCard({
     const isLoading = isLoadingStats || isLoadingUserVote || isCastingVote || isRemovingVote;
     const isDisabled = isLoading || isAuthLoading || !isSignedIn;
 
+    // Debug rendering state
+    console.log(`[Debug VoteCard ${id}] Rendering options:`, {
+      type,
+      isLoading,
+      isDisabled,
+      voteStatsAvailable: !!voteStats,
+      options: processedOptions
+    });
+
     if (isLoading) {
       return (
         <div className="flex justify-center py-4">
@@ -510,11 +529,19 @@ export function VoteCard({
         const noVotes = voteStats?.['no'] || 0;
         const totalYesNoVotes = yesVotes + noVotes;
         
+        // Debug Yes/No votes
+        console.log(`[Debug YesNo ${id}] Yes/No votes:`, {
+          yes: yesVotes,
+          no: noVotes,
+          total: totalYesNoVotes,
+          breakdown: voteStats?.breakdown
+        });
+        
         return (
           <div className="flex flex-col gap-4 mt-4">
             {/* Vote stats card */}
             {totalYesNoVotes > 0 && (
-              <div className="w-full bg-gray-50 rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2">
+              <div className="w-full bg-gray-50 rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2 border border-gray-200">
                 {/* Yes votes progress */}
                 <div 
                   className="relative bg-green-100 py-2.5 px-3 flex items-center justify-center"
@@ -602,10 +629,21 @@ export function VoteCard({
       case "multiple":
         const totalMultipleVotes = processedOptions.reduce((sum, option) => sum + (voteStats?.breakdown?.[option] || 0), 0);
         
+        // Debug multiple choice votes
+        console.log(`[Debug Multiple ${id}] Multiple choice votes:`, {
+          totalVotes: totalMultipleVotes,
+          options: processedOptions,
+          voteCounts: processedOptions.map(option => ({
+            option,
+            votes: voteStats?.breakdown?.[option] || 0
+          })),
+          breakdown: voteStats?.breakdown
+        });
+        
         return (
           <div className="flex flex-col gap-3 mt-4">
             {totalMultipleVotes > 0 && (
-              <div className="bg-gray-50 p-2 rounded-lg mb-2">
+              <div className="bg-gray-50 p-2 rounded-lg mb-2 border border-gray-200">
                 <p className="text-sm text-center text-gray-600">Ukupno glasova: <span className="font-semibold">{totalMultipleVotes}</span></p>
               </div>
             )}
