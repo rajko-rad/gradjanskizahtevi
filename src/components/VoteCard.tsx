@@ -547,32 +547,30 @@ export function VoteCard({
         
         return (
           <div className="flex flex-col gap-4 mt-4">
-            {/* Vote stats card */}
+            {/* Vote stats card (made narrower, no icons/bg/border) */}
             {totalYesNoVotes > 0 && (
-              <div className="w-full bg-gray-50 rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2 border border-gray-200">
+              <div className="w-full rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2 h-3"> {/* Reduced height, removed bg/border */}
                 {/* Yes votes progress */}
                 <div 
-                  className="relative bg-green-100 py-2.5 px-3 flex items-center justify-center"
+                  className="relative bg-green-100 flex items-center justify-center" // Removed padding
                   style={{ 
                     width: totalYesNoVotes > 0 ? `${(yesVotes / totalYesNoVotes) * 100}%` : '50%',
                   }}
                 >
-                  <div className="flex items-center gap-1.5 z-10">
-                    <ThumbsUp className="h-4 w-4 text-green-700" />
-                    <span className="font-bold text-green-800 text-sm">{yesVotes}</span>
+                  <div className="flex items-center gap-1.5 z-10">                    
+                    {/* Icon removed */}
                   </div>
                 </div>
                 
                 {/* No votes progress */}
                 <div 
-                  className="relative bg-red-100 py-2.5 px-3 flex items-center justify-center"
+                  className="relative bg-red-100 flex items-center justify-center" // Removed padding
                   style={{ 
                     width: totalYesNoVotes > 0 ? `${(noVotes / totalYesNoVotes) * 100}%` : '50%',
                   }}
                 >
                   <div className="flex items-center gap-1.5 z-10">
-                    <ThumbsDown className="h-4 w-4 text-red-700" />
-                    <span className="font-bold text-red-800 text-sm">{noVotes}</span>
+                    {/* Icon removed */}
                   </div>
                 </div>
               </div>
@@ -584,7 +582,8 @@ export function VoteCard({
                 onClick={() => handleVote("yes")}
                 className={cn(
                   "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-6 text-base relative",
-                  selectedOption === "yes" && "bg-green-100 border-green-300"
+                  selectedOption === "yes" && "bg-green-100 border-green-300",
+                  selectedOption && selectedOption !== "yes" && "opacity-60" // Add opacity if selected and not this option
                 )}
                 variant="outline"
                 disabled={isDisabled}
@@ -598,19 +597,14 @@ export function VoteCard({
                   <span className="font-medium">Za</span>
                   {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
                 </div>
-                
-                {yesVotes > 0 && (
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-green-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
-                    {yesVotes}
-                  </div>
-                )}
               </Button>
               
               <Button
                 onClick={() => handleVote("no")}
                 className={cn(
                   "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-6 text-base relative",
-                  selectedOption === "no" && "bg-red-100 border-red-300"
+                  selectedOption === "no" && "bg-red-100 border-red-300",
+                  selectedOption && selectedOption !== "no" && "opacity-60" // Add opacity if selected and not this option
                 )}
                 variant="outline"
                 disabled={isDisabled}
@@ -624,12 +618,6 @@ export function VoteCard({
                   <span className="font-medium">Protiv</span>
                   {selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
                 </div>
-                
-                {noVotes > 0 && (
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
-                    {noVotes}
-                  </div>
-                )}
               </Button>
             </div>
           </div>
