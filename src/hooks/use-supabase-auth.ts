@@ -160,7 +160,6 @@ export function useSupabaseAuth() {
             );
             
             if (syncedUser && isMounted.current) {
-              console.log("Successfully synced user with Supabase:", syncedUser);
               // Cache the user data
               userCache.current[user.id] = syncedUser;
               setSupabaseUser(syncedUser);

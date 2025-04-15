@@ -376,4 +376,56 @@ export async function getUserVotes(
   }
 
   return data;
+}
+
+/**
+ * Get the current user's vote for multiple requests
+ */
+export async function getUserVotesForRequests(
+  userId: string, 
+  requestIds: string[],
+  authToken?: string | null
+): Promise<{ [requestId: string]: Vote | null }> {
+  if (!userId || requestIds.length === 0) {
+    debugLog("getUserVotesForRequests: Missing userId or requestIds", { userId, requestIds });
+    return {};
+  }
+
+  debugLog("getUserVotesForRequests called with:", { 
+    userId: userId.substring(0, 10) + '...', 
+    requestIds, 
+    hasToken: !!authToken,
+    tokenLength: authToken?.length
+  });
+
+  const client = getSupabaseClient(authToken);
+  const { data: votes, error } = await client
+    .from('votes')
+    .select('*')
+    .eq('user_id', userId)
+    .in('request_id', requestIds);
+
+  if (error) {
+    // Don't throw if it's a permission error when logged out, just return empty
+    if (error.code === 'PGRST301' || error.code === '42501') { // invalid_jwt / permission_denied
+      debugLog("getUserVotesForRequests: Auth error fetching votes, returning empty", error);
+      return {};
+    } else {
+      console.error("Error fetching user votes for multiple requests:", error);
+      throw new Error('Failed to fetch user votes');
+    }
+  }
+
+  // Create a map of requestId -> vote
+  const voteMap: { [requestId: string]: Vote | null } = {};
+  requestIds.forEach(id => { voteMap[id] = null; }); // Initialize with null
+
+  if (votes) {
+    votes.forEach(vote => {
+      voteMap[vote.request_id] = vote;
+    });
+  }
+  
+  debugLog("getUserVotesForRequests: Returning vote map", voteMap);
+  return voteMap;
 } 

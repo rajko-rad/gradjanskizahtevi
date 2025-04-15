@@ -23,10 +23,10 @@ import {
   useVoteStats, 
   useCastVote, 
   useRemoveVote, 
-  useUserVote, 
   useComments
 } from "@/hooks/use-queries";
 import { useUser } from "@clerk/clerk-react";
+import * as votesService from '@/services/votes'; // Import Vote type source
 
 // Authentication status component
 function AuthStatus({ 
@@ -86,6 +86,8 @@ interface VoteCardProps {
   min?: number;
   max?: number;
   hasComments?: boolean;
+  userVoteData: votesService.Vote | null; // Add prop for passed-in user vote
+  isLoadingUserVote: boolean; // Add prop for bulk loading state
 }
 
 export function VoteCard({ 
@@ -97,6 +99,8 @@ export function VoteCard({
   min = 3, 
   max = 18,
   hasComments = true,
+  userVoteData, // Destructure new prop
+  isLoadingUserVote // Destructure new prop
 }: VoteCardProps) {
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
@@ -131,21 +135,6 @@ export function VoteCard({
     });
   }, [voteStats, isLoadingStats, id]);
 
-  // Fetch user's existing vote
-  const { 
-    data: userVote, 
-    isLoading: isLoadingUserVote,
-    error: userVoteError,
-    refetch: refetchUserVote
-  } = useUserVote(id);
-
-  // If there's an error fetching the user vote, log it but don't break the UI
-  useEffect(() => {
-    if (userVoteError) {
-      console.error("Error loading user vote:", userVoteError);
-    }
-  }, [userVoteError]);
-
   // Set up voting mutations
   const { mutate: castVote, isPending: isCastingVote } = useCastVote();
   const { mutate: removeVote, isPending: isRemovingVote } = useRemoveVote();
@@ -156,16 +145,16 @@ export function VoteCard({
     showComments
   );
 
-  // Update selected option based on user's vote
+  // Update selected option based on user's vote (using prop)
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   
   useEffect(() => {
-    if (userVote) {
-      setSelectedOption(userVote.value);
+    if (userVoteData) {
+      setSelectedOption(userVoteData.value);
     } else {
       setSelectedOption(null);
     }
-  }, [userVote]);
+  }, [userVoteData]); // Depend on the prop
 
   // Log timing for vote stats fetching
   useEffect(() => {
@@ -177,24 +166,7 @@ export function VoteCard({
     }
   }, [isLoadingStats, id]);
 
-  // Log timing for user vote fetching
-  useEffect(() => {
-    if (isLoadingUserVote) {
-      console.time(`[VoteCard ${id}] Fetch User Vote`);
-    } else {
-      // Use a timeout to ensure this logs after potential state updates
-      setTimeout(() => console.timeEnd(`[VoteCard ${id}] Fetch User Vote`), 0);
-    }
-  }, [isLoadingUserVote, id]);
-
-  // Update refetch logic when authentication changes
-  useEffect(() => {
-    if (isSignedIn && !isLoadingUserVote) {
-      refetchUserVote();
-    }
-  }, [isSignedIn, refetchUserVote, isLoadingUserVote]);
-
-  // Add a button to manually refresh auth if needed
+  // Add a button to manually refresh auth if needed (refetching user vote is no longer needed here)
   const handleRefreshAuth = async () => {
     if (isAuthRefreshing) return;
     
@@ -208,12 +180,8 @@ export function VoteCard({
       
       try {
         await refreshAuth();
-        
-        // Give a short delay to allow auth to propagate
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Refetch user's vote
-        refetchUserVote();
+        // Optionally, trigger a refetch of the bulk votes in the parent if needed
+        // queryClient.invalidateQueries({ queryKey: ['votes', 'user', 'bulk'] });
       } catch (error) {
         console.error("Auth refresh error:", error);
         toast({

@@ -4,20 +4,50 @@ import { Footer } from "@/components/Footer";
 import { VoteCard } from "@/components/VoteCard";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-react";
-import { categories, requests } from "@/data/mockData";
+import { useCategory, useRequests, useUserVotesForRequests } from "@/hooks/use-queries";
+import { useMemo } from 'react';
 
 const CategoryDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const category = categories.find(cat => cat.id === id);
-  const categoryRequests = requests.filter(req => req.categoryId === id);
 
-  if (!category) {
+  // Fetch category details and requests using hooks
+  const { data: category, isLoading: categoryLoading, error: categoryError } = useCategory(id || '');
+  const { data: categoryRequests = [], isLoading: requestsLoading, error: requestsError } = useRequests(id);
+
+  // Extract request IDs for bulk fetching user votes
+  const requestIds = useMemo(() => 
+    categoryRequests.map(req => req.id)
+  , [categoryRequests]);
+
+  // Fetch all user votes for the visible requests in one go
+  const { data: userVotesMap = {}, isLoading: userVotesLoading } = useUserVotesForRequests(requestIds);
+
+  // Combine loading states
+  const isLoading = categoryLoading || requestsLoading;
+  const error = categoryError || requestsError;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-grow flex items-center justify-center">
+          <div>Loading category details...</div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (error || !category) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-grow flex items-center justify-center">
           <div className="text-center">
-            <h1 className="text-2xl font-bold mb-4">Kategorija nije pronađena</h1>
+            <h1 className="text-2xl font-bold mb-4">
+              {error ? 'Greška pri učitavanju' : 'Kategorija nije pronađena'}
+            </h1>
+            <p className="text-gray-500 mb-4">{error instanceof Error ? error.message : ''}</p>
             <Button asChild>
               <a href="/">Povratak na početnu</a>
             </Button>
@@ -58,7 +88,9 @@ const CategoryDetail = () => {
                   options={request.options}
                   min={request.min}
                   max={request.max}
-                  hasComments={request.hasComments}
+                  hasComments={request.has_comments}
+                  userVoteData={userVotesMap[request.id] || null}
+                  isLoadingUserVote={userVotesLoading}
                 />
               ))
             ) : (

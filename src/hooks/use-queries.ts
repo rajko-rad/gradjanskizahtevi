@@ -500,6 +500,86 @@ export function useUserVote(requestId: string) {
   return voteQuery;
 }
 
+/**
+ * Fetches the current user's votes for multiple requests in bulk.
+ */
+export function useUserVotesForRequests(requestIds: string[]) {
+  const { isSignedIn, getToken } = useAuth();
+  const { user } = useUser();
+  const { supabaseUser, getCurrentAuthToken } = useSupabaseAuth();
+  const queryClient = useQueryClient();
+
+  // Get effective user ID, prefer Supabase user ID
+  const effectiveUserId = supabaseUser?.id || user?.id || 'none';
+  const isSynced = !!supabaseUser?.id;
+
+  // Filter out any empty request IDs
+  const validRequestIds = requestIds.filter(id => !!id);
+
+  return useQuery<{
+    [requestId: string]: votesService.Vote | null 
+  }> ({
+    // Include userId in the query key to refetch if user changes
+    queryKey: ['votes', 'user', 'bulk', effectiveUserId, { requestIds: validRequestIds.sort() }], // Sort IDs for consistent key
+    queryFn: async () => {
+      if (!isSignedIn || !user || validRequestIds.length === 0) {
+        debugLog("User not signed in or no valid request IDs, skipping bulk vote query");
+        return {};
+      }
+
+      let token: string | null = null;
+      try {
+        token = await getCurrentAuthToken();
+        if (!token) {
+          debugLog("No cached token, trying direct token fetch for bulk votes");
+          token = await getToken({ template: 'supabase' });
+        }
+      } catch (tokenError) {
+        console.error("Error getting token for bulk vote query:", tokenError);
+        return {}; // Return empty on token error
+      }
+
+      if (!token) {
+        debugLog("No token available for bulk vote query, returning empty");
+        return {};
+      }
+
+      // Handle user sync if necessary (simplified version, assumes primary sync happens elsewhere)
+      if (isSignedIn && user && !isSynced && token && user.primaryEmailAddress?.emailAddress) {
+        try {
+          debugLog("User not synced, ensuring sync before bulk vote query (no wait)");
+          const { syncUserWithSupabase } = await import('@/services/users');
+          // Trigger sync but don't wait for it here, rely on global state
+          syncUserWithSupabase(
+            user.id,
+            user.primaryEmailAddress.emailAddress,
+            user.fullName,
+            user.imageUrl,
+            token
+          ).catch(syncError => {
+            console.error("Background sync error during bulk vote query:", syncError);
+          });
+        } catch (importError) {
+          console.error("Error importing sync function:", importError);
+        }
+      }
+
+      debugLog("Fetching bulk user votes for IDs:", validRequestIds);
+      try {
+        const votesMap = await votesService.getUserVotesForRequests(effectiveUserId, validRequestIds, token);
+        return votesMap;
+      } catch (error) {
+        console.error("Error fetching bulk user votes:", error);
+        return {}; // Return empty on fetch error
+      }
+    },
+    // Enable only if signed in, user exists, and there are request IDs
+    enabled: isSignedIn && !!user && validRequestIds.length > 0,
+    staleTime: 1000 * 60, // Cache for 1 minute
+    refetchOnWindowFocus: false, // Don't refetch just on window focus
+  });
+}
+
 // ---------------------- Comments Queries & Mutations ----------------------
 
 export function useComments(requestId: string, includeVotes: boolean = false) {
