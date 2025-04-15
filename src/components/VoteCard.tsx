@@ -323,8 +323,8 @@ export function VoteCard({
 
     // For yes/no votes
     if (type === "yesno") {
-      const yesVotes = voteStats?.['yes'] || 0;
-      const noVotes = voteStats?.['no'] || 0;
+      const yesVotes = voteStats?.breakdown?.['yes'] || 0;
+      const noVotes = voteStats?.breakdown?.['no'] || 0;
       const totalVotes = yesVotes + noVotes;
       
       // Don't show if no votes yet
@@ -533,8 +533,8 @@ export function VoteCard({
 
     switch (type) {
       case "yesno":
-        const yesVotes = voteStats?.['yes'] || 0;
-        const noVotes = voteStats?.['no'] || 0;
+        const yesVotes = voteStats?.breakdown?.['yes'] || 0;
+        const noVotes = voteStats?.breakdown?.['no'] || 0;
         const totalYesNoVotes = yesVotes + noVotes;
         
         // Debug Yes/No votes
