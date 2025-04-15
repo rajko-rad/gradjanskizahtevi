@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SignIn, SignUp, UserProfile, useAuth, useUser } from "@clerk/clerk-react";
 import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
-import { syncUserWithSupabase } from "@/services/users";
+import { syncUserWithSupabase, type User } from "@/services/users";
 import { getSupabaseClient, logTokenInfo } from "@/lib/clerk-supabase"; 
 import clerkSupabase from "@/lib/clerk-supabase";
 import Index from "./pages/Index";
@@ -52,36 +52,36 @@ type AuthContextType = {
   token: string | null;
   refreshToken: () => Promise<string | null>;
   isAuthenticated: boolean;
+  supabaseUser: User | null;
+  isLoadingAuth: boolean;
 };
 
 const AuthContext = createContext<AuthContextType>({
   token: null,
   refreshToken: async () => null,
   isAuthenticated: false,
+  supabaseUser: null,
+  isLoadingAuth: true,
 });
 
 export const useAuthContext = () => useContext(AuthContext);
 
 // Create a wrapper component that uses the hook
 const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
-  // Get Clerk auth state - separate useAuth and useUser calls
+  // Get Clerk auth state
   const { isSignedIn, getToken } = useAuth();
   const { user, isLoaded: isUserLoaded } = useUser();
   
-  // State for tracking initialization and sync
-  const [initialSyncDone, setInitialSyncDone] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(true);
+  // State for tracking initialization, sync, token, and Supabase user profile
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [currentToken, setCurrentToken] = useState<string | null>(null);
+  const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   
   // Refs for tracking sync state
   const syncInProgress = useRef(false);
-  const retryAttempts = useRef(0);
   const isMounted = useRef(true);
   const cachedTokenRef = useRef<string | null>(null);
   const tokenRefreshTimerRef = useRef<number | null>(null);
-  
-  // Call the hook once to sync Clerk auth with Supabase
-  const auth = useSupabaseAuth();
   
   // Function to get and cache a token
   const getAndCacheToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
@@ -141,130 +141,96 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isSignedIn, getAndCacheToken]);
   
-  // Function to sync user with exponential backoff
-  const syncUserWithBackoff = useCallback(async () => {
-    if (syncInProgress.current || !isMounted.current) {
+  // Function to sync user AND fetch profile
+  const syncAndFetchProfile = useCallback(async () => {
+    if (syncInProgress.current || !isMounted.current || !isSignedIn || !user) {
       return null;
     }
     
     syncInProgress.current = true;
-    
+    setIsLoadingAuth(true); // Start loading for the whole auth process
+    let fetchedToken: string | null = null;
+    let syncedSupabaseUser: User | null = null;
+
     try {
-      // If user is not signed in, don't attempt to sync
-      if (!isSignedIn || !user) {
-        debugLog("No user signed in, skipping sync");
-        return null;
+      // Step 1: Get Token (with retries inside getAndCacheToken if needed)
+      fetchedToken = await getAndCacheToken(true); // Force refresh during sync
+      if (!fetchedToken) {
+        throw new Error("Failed to get auth token after retries.");
       }
       
-      // Get primary email
+      // Step 2: Sync User with Supabase (create/update row in public.users)
       const primaryEmail = user.primaryEmailAddress?.emailAddress;
-      if (!primaryEmail) {
-        debugLog("No primary email found, cannot sync user");
-        return null;
-      }
-      
-      // Get token with retry logic
-      let token = cachedTokenRef.current;
-      
-      // Check if token is valid or needs refresh
-      if (!token || clerkSupabase.isTokenExpired(token)) {
-        // Try to get a fresh token with exponential backoff
-        for (let attempt = 0; attempt < MAX_SYNC_RETRIES; attempt++) {
-          token = await getAndCacheToken(true); // Force refresh
-          
-          if (token) break;
-          
-          // If this isn't our last attempt, wait before retrying
-          if (attempt < MAX_SYNC_RETRIES - 1) {
-            const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
-            debugLog(`Token retrieval failed, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_SYNC_RETRIES})`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-      }
-      
-      if (!token) {
-        debugLog("Failed to get token after retries, cannot sync user");
-        return null;
-      }
-      
-      // Sync the user with Supabase using the token
-      debugLog("Syncing user with Supabase", { userId: user.id, email: primaryEmail });
-      const syncedUser = await syncUserWithSupabase(
+      if (!primaryEmail) throw new Error("Primary email not found.");
+
+      debugLog("Syncing user with Supabase", { userId: user.id });
+      const syncResult = await syncUserWithSupabase(
         user.id,
         primaryEmail,
         user.fullName,
         user.imageUrl,
-        token
+        fetchedToken
       );
+      // syncUserWithSupabase likely returns the user object or null/throws error
+      // We don't strictly need its return value if we fetch separately, but logging is good
+      debugLog("Sync result:", syncResult ? "Success" : "No user data returned from sync"); 
+
+      // Step 3: Fetch the definitive Supabase User Profile
+      debugLog("Fetching definitive Supabase user profile for:", user.id);
+      const client = getSupabaseClient(fetchedToken);
+      const { data: profileData, error: profileError } = await client
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
       
-      if (syncedUser) {
-        debugLog("User successfully synced with ID", syncedUser.id);
-        
-        // Invalidate relevant queries
-        queryClient.invalidateQueries({ queryKey: ['users', user.id] });
-        queryClient.invalidateQueries({ queryKey: ['votes', 'user'] });
-        
-        return syncedUser;
-      } else {
-        debugLog("User sync returned no data");
-        return null;
-      }
+      syncedSupabaseUser = profileData;
+      debugLog("Successfully fetched Supabase user profile", syncedSupabaseUser);
+
     } catch (error) {
-      console.error("Error syncing user:", error);
-      return null;
+      console.error("Error during sync and fetch profile:", error);
+      // Keep existing token if fetch failed? Maybe clear it?
+      // setSupabaseUser(null); // Clear profile on error
     } finally {
+      // Update state regardless of success/failure after attempt
+      if (isMounted.current) {
+        setCurrentToken(fetchedToken); // Update token state
+        setSupabaseUser(syncedSupabaseUser); // Update profile state
+        setIsLoadingAuth(false); // End loading for the auth process
+      }
       syncInProgress.current = false;
     }
+    return syncedSupabaseUser; // Return fetched profile
   }, [isSignedIn, user, getAndCacheToken]);
   
-  // Explicitly sync user data when Clerk auth state changes
+  // Effect to handle auth changes
   useEffect(() => {
     isMounted.current = true;
-    
-    const handleAuthChange = async () => {
-      debugLog("Auth state change detected", { isSignedIn, isUserLoaded });
-      
-      // Only start initialization if both Clerk states are loaded
-      if (!isUserLoaded) {
-        debugLog("Clerk user not fully loaded yet, waiting");
-        return;
-      }
-      
-      // Set initializing state
-      setIsInitializing(true);
-      
-      if (!isSignedIn) {
-        debugLog("User not signed in, clearing auth state");
-        cachedTokenRef.current = null;
-        setCurrentToken(null);
-        setInitialSyncDone(true);
-        setIsInitializing(false);
-        return;
-      }
-      
-      // User is signed in, sync with Supabase
-      try {
-        const syncedUser = await syncUserWithBackoff();
-        
-        // Set up token refresh timer after initial sync
-        setupTokenRefreshTimer();
-        
-        if (isMounted.current) {
-          setInitialSyncDone(true);
-          setIsInitializing(false);
-        }
-      } catch (error) {
-        console.error("Error in initial auth sync:", error);
-        if (isMounted.current) {
-          setInitialSyncDone(true);
-          setIsInitializing(false);
-        }
-      }
-    };
-    
-    handleAuthChange();
-    
+    debugLog("Auth state change detected", { isSignedIn, isUserLoaded });
+
+    if (!isUserLoaded) {
+      debugLog("Clerk user not fully loaded yet, waiting");
+      setIsLoadingAuth(true); // Remain in loading state
+      return;
+    }
+
+    if (!isSignedIn) {
+      debugLog("User signed out, clearing auth state");
+      cachedTokenRef.current = null;
+      setCurrentToken(null);
+      setSupabaseUser(null);
+      setIsLoadingAuth(false); // No longer loading
+      if (tokenRefreshTimerRef.current) clearInterval(tokenRefreshTimerRef.current);
+    } else {
+      // User is signed in (or state just changed to signed in)
+      debugLog("User signed in, starting sync and profile fetch");
+      syncAndFetchProfile();
+      setupTokenRefreshTimer();
+    }
+
+    // Cleanup function
     return () => {
       isMounted.current = false;
       if (tokenRefreshTimerRef.current) {
@@ -272,17 +238,20 @@ const SupabaseAuthProvider = ({ children }: { children: React.ReactNode }) => {
         tokenRefreshTimerRef.current = null;
       }
     };
-  }, [isSignedIn, isUserLoaded, syncUserWithBackoff, setupTokenRefreshTimer]);
+  // Rerun when Clerk state changes
+  }, [isSignedIn, isUserLoaded, syncAndFetchProfile, setupTokenRefreshTimer]); 
   
-  // Export the token through context with a provider component - this must be created at every render
+  // Provide state through context
   const providerValue = useMemo(() => ({
     token: currentToken,
     refreshToken: () => getAndCacheToken(true),
-    isAuthenticated: !!isSignedIn && !!currentToken
-  }), [currentToken, getAndCacheToken, isSignedIn]);
+    isAuthenticated: !!isSignedIn && !!currentToken,
+    supabaseUser: supabaseUser, // Provide the fetched Supabase user
+    isLoadingAuth: isLoadingAuth, // Provide the combined loading state
+  }), [currentToken, getAndCacheToken, isSignedIn, supabaseUser, isLoadingAuth]);
   
-  // Show loading indicator while initializing
-  if (isInitializing) {
+  // Show loading indicator only during initial auth check
+  if (isLoadingAuth && !supabaseUser && !currentToken) { // More specific loading condition
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <div className="animate-spin h-8 w-8 border-4 border-serbia-blue border-t-transparent rounded-full"></div>

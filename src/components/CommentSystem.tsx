@@ -129,7 +129,7 @@ function CommentThread({
   const { user } = useUser();
   const { isSignedIn } = useAuth();
   const { toast } = useToast();
-  const { canVote, tokenVerified } = useSupabaseAuth();
+  const { isAuthenticated, supabaseUser, isLoading: isLoadingAuth } = useSupabaseAuth();
   
   const { mutate: addComment, isPending: isAddingReply } = useAddComment();
   const { mutate: updateComment, isPending: isUpdatingComment } = useUpdateComment();
@@ -154,7 +154,7 @@ function CommentThread({
     : "Nedavno";
 
   const handleVote = (value: -1 | 1) => {
-    if (!canVote || !tokenVerified) {
+    if (!isAuthenticated || !supabaseUser) {
       toast({
         title: "Greška",
         description: "Morate biti prijavljeni da biste glasali.",

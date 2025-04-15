@@ -104,10 +104,9 @@ export function VoteCard({
 }: VoteCardProps) {
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
-  const { supabaseUser, refreshAuth, isLoading: isAuthLoading } = useSupabaseAuth();
+  const { supabaseUser, isLoading: isAuthLoading } = useSupabaseAuth();
   const [showComments, setShowComments] = useState(false);
   const [rangeValue, setRangeValue] = useState(min);
-  const [isAuthRefreshing, setIsAuthRefreshing] = useState(false);
 
   // Process options to normalize between string[] and Option[]
   const processedOptions = options.map(option => {
@@ -165,35 +164,6 @@ export function VoteCard({
       setTimeout(() => console.timeEnd(`[VoteCard ${id}] Fetch Vote Stats`), 0);
     }
   }, [isLoadingStats, id]);
-
-  // Add a button to manually refresh auth if needed (refetching user vote is no longer needed here)
-  const handleRefreshAuth = async () => {
-    if (isAuthRefreshing) return;
-    
-    if (isSignedIn) {
-      setIsAuthRefreshing(true);
-      
-      toast({
-        title: "Refreshing authentication",
-        description: "Attempting to refresh your authentication...",
-      });
-      
-      try {
-        await refreshAuth();
-        // Optionally, trigger a refetch of the bulk votes in the parent if needed
-        // queryClient.invalidateQueries({ queryKey: ['votes', 'user', 'bulk'] });
-      } catch (error) {
-        console.error("Auth refresh error:", error);
-        toast({
-          title: "Authentication failed",
-          description: "Failed to refresh authentication. Please try again.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsAuthRefreshing(false);
-      }
-    }
-  };
 
   // Update error handling for voting
   const handleVote = async (value: string) => {
