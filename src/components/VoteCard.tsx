@@ -167,6 +167,26 @@ export function VoteCard({
     }
   }, [userVote]);
 
+  // Log timing for vote stats fetching
+  useEffect(() => {
+    if (isLoadingStats) {
+      console.time(`[VoteCard ${id}] Fetch Vote Stats`);
+    } else {
+      // Use a timeout to ensure this logs after potential state updates
+      setTimeout(() => console.timeEnd(`[VoteCard ${id}] Fetch Vote Stats`), 0);
+    }
+  }, [isLoadingStats, id]);
+
+  // Log timing for user vote fetching
+  useEffect(() => {
+    if (isLoadingUserVote) {
+      console.time(`[VoteCard ${id}] Fetch User Vote`);
+    } else {
+      // Use a timeout to ensure this logs after potential state updates
+      setTimeout(() => console.timeEnd(`[VoteCard ${id}] Fetch User Vote`), 0);
+    }
+  }, [isLoadingUserVote, id]);
+
   // Update refetch logic when authentication changes
   useEffect(() => {
     if (isSignedIn && !isLoadingUserVote) {
@@ -582,8 +602,8 @@ export function VoteCard({
                 onClick={() => handleVote("yes")}
                 className={cn(
                   "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-6 text-base relative",
-                  selectedOption === "yes" && "bg-green-100 border-green-300",
-                  selectedOption && selectedOption !== "yes" && "opacity-60" // Add opacity if selected and not this option
+                  !isLoading && selectedOption === "yes" && "bg-green-100 border-green-300",
+                  !isLoading && selectedOption && selectedOption !== "yes" && "opacity-60"
                 )}
                 variant="outline"
                 disabled={isDisabled}
@@ -595,16 +615,21 @@ export function VoteCard({
                     <ThumbsUp className="mr-2 h-5 w-5" />
                   )}
                   <span className="font-medium">Za</span>
-                  {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
+                  {!isLoading && selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
                 </div>
+                {!isLoading && yesVotes > 0 && (
+                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-green-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
+                    {yesVotes}
+                  </div>
+                )}
               </Button>
               
               <Button
                 onClick={() => handleVote("no")}
                 className={cn(
                   "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-6 text-base relative",
-                  selectedOption === "no" && "bg-red-100 border-red-300",
-                  selectedOption && selectedOption !== "no" && "opacity-60" // Add opacity if selected and not this option
+                  !isLoading && selectedOption === "no" && "bg-red-100 border-red-300",
+                  !isLoading && selectedOption && selectedOption !== "no" && "opacity-60"
                 )}
                 variant="outline"
                 disabled={isDisabled}
@@ -616,8 +641,13 @@ export function VoteCard({
                     <ThumbsDown className="mr-2 h-5 w-5" />
                   )}
                   <span className="font-medium">Protiv</span>
-                  {selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
+                  {!isLoading && selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
                 </div>
+                {!isLoading && noVotes > 0 && (
+                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
+                    {noVotes}
+                  </div>
+                )}
               </Button>
             </div>
           </div>
@@ -654,7 +684,7 @@ export function VoteCard({
                     onClick={() => handleVote(option)}
                     className={cn(
                       "w-full justify-between text-left bg-gray-50 hover:bg-gray-100 text-gray-800 border transition-all py-5 px-4 h-auto",
-                      selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
+                      !isLoading && selectedOption === option && "bg-blue-50 text-blue-700 border-blue-200"
                     )}
                     variant="outline"
                     disabled={isDisabled}
@@ -663,13 +693,13 @@ export function VoteCard({
                     <span className="flex items-center">
                       {isLoading ? (
                         <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                      ) : selectedOption === option ? (
+                      ) : !isLoading && selectedOption === option ? (
                         <CheckCircle2 className="ml-2 h-4 w-4 text-blue-600" />
                       ) : null}
                     </span>
                   </Button>
                   
-                  {voteCount > 0 && (
+                  {!isLoading && voteCount > 0 && (
                     <>
                       {/* Vote count badge */}
                       <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-blue-600 text-white text-xs font-bold rounded-full min-w-7 h-7 px-2 flex items-center justify-center shadow-sm border border-white">
