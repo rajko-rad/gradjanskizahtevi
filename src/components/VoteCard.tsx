@@ -507,29 +507,25 @@ export function VoteCard({
           <div className="flex flex-col gap-4 mt-4">
             {/* Vote stats card (made narrower, no icons/bg/border) */}
             {totalYesNoVotes > 0 && (
-              <div className="w-full rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2 h-3"> {/* Reduced height, removed bg/border */}
+              <div className="w-full rounded-lg overflow-hidden flex flex-col sm:flex-row mb-2 h-4 text-xs font-medium"> {/* Increased height slightly */}
                 {/* Yes votes progress */}
                 <div 
-                  className="relative bg-green-100 flex items-center justify-center" // Removed padding
+                  className="relative bg-green-100 flex items-center justify-center text-green-700 px-2" // Added padding & text color
                   style={{ 
                     width: totalYesNoVotes > 0 ? `${(yesVotes / totalYesNoVotes) * 100}%` : '50%',
                   }}
                 >
-                  <div className="flex items-center gap-1.5 z-10">                    
-                    {/* Icon removed */}
-                  </div>
+                  <span className="z-10">{yesVotes} Za</span> 
                 </div>
                 
                 {/* No votes progress */}
                 <div 
-                  className="relative bg-red-100 flex items-center justify-center" // Removed padding
+                  className="relative bg-red-100 flex items-center justify-center text-red-700 px-2" // Added padding & text color
                   style={{ 
                     width: totalYesNoVotes > 0 ? `${(noVotes / totalYesNoVotes) * 100}%` : '50%',
                   }}
                 >
-                  <div className="flex items-center gap-1.5 z-10">
-                    {/* Icon removed */}
-                  </div>
+                  <span className="z-10">{noVotes} Protiv</span>
                 </div>
               </div>
             )}
@@ -539,8 +535,8 @@ export function VoteCard({
               <Button
                 onClick={() => handleVote("yes")}
                 className={cn(
-                  "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-6 text-base relative",
-                  !isLoading && selectedOption === "yes" && "bg-green-100 border-green-300",
+                  "flex-1 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition-all py-3 text-base", // Reduced py-6 to py-3
+                  !isLoading && selectedOption === "yes" && "bg-green-100 border-green-300 ring-2 ring-serbia-blue", // Added blue ring for selection
                   !isLoading && selectedOption && selectedOption !== "yes" && "opacity-60"
                 )}
                 variant="outline"
@@ -553,20 +549,16 @@ export function VoteCard({
                     <ThumbsUp className="mr-2 h-5 w-5" />
                   )}
                   <span className="font-medium">Za</span>
-                  {!isLoading && selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-green-600" />}
+                  {!isLoading && selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-serbia-blue" />} {/* Changed checkmark to blue */}
                 </div>
-                {!isLoading && yesVotes > 0 && (
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-green-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
-                    {yesVotes}
-                  </div>
-                )}
+                {/* Removed vote count badge */}
               </Button>
               
               <Button
                 onClick={() => handleVote("no")}
                 className={cn(
-                  "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-6 text-base relative",
-                  !isLoading && selectedOption === "no" && "bg-red-100 border-red-300",
+                  "flex-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all py-3 text-base", // Reduced py-6 to py-3
+                  !isLoading && selectedOption === "no" && "bg-red-100 border-red-300 ring-2 ring-serbia-blue", // Added blue ring for selection
                   !isLoading && selectedOption && selectedOption !== "no" && "opacity-60"
                 )}
                 variant="outline"
@@ -579,13 +571,9 @@ export function VoteCard({
                     <ThumbsDown className="mr-2 h-5 w-5" />
                   )}
                   <span className="font-medium">Protiv</span>
-                  {!isLoading && selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-red-600" />}
+                  {!isLoading && selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-serbia-blue" />} {/* Changed checkmark to blue */}
                 </div>
-                {!isLoading && noVotes > 0 && (
-                  <div className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-sm border border-white">
-                    {noVotes}
-                  </div>
-                )}
+                {/* Removed vote count badge */}
               </Button>
             </div>
           </div>
