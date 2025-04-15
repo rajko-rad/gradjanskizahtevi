@@ -51,204 +51,108 @@ Database types are defined in `src/types/supabase.ts` and are generated based on
 
 ## Authentication
 
-### Authentication Flow
+### Authentication Flow (Centralized)
 
-The project uses Clerk for authentication and syncs Clerk's JWT tokens with Supabase. This is handled by the `useSupabaseAuth` hook:
+The project uses Clerk for authentication. The synchronization and state management with Supabase are handled centrally by the `SupabaseAuthProvider` component in `src/App.tsx`.
 
-```typescript
-// In src/hooks/use-supabase-auth.ts
-export function useSupabaseAuth() {
-  const { getToken, isSignedIn } = useAuth();
-  const { user } = useUser();
+1.  Clerk manages frontend sign-in/out.
+2.  `SupabaseAuthProvider` detects auth changes.
+3.  It fetches a Supabase-compatible JWT from Clerk.
+4.  It ensures the user exists in the `public.users` table (sync).
+5.  It fetches the `public.users` profile.
+6.  It provides the token, profile (`supabaseUser`), and auth status (`isAuthenticated`, `isLoadingAuth`) via React Context.
+7.  Components use this context (often via the simplified `useSupabaseAuth` hook) to get the token and authenticated Supabase client for RLS-protected requests.
 
-  // Get a fresh token
-  const getFreshToken = useCallback(async (forceRefresh = false): Promise<string | null> => {
-    try {
-      const token = await getToken({ template: 'supabase' });
-      if (token) {
-        return token;
-      }
-      return null;
-    } catch (error) {
-      console.error("Error getting token:", error);
-      return null;
-    }
-  }, [getToken]);
+Refer to `GUIDE_AUTHENTICATION_GUIDE.md` for full details.
 
-  // Sync user with Supabase
-  const syncUserWithClerk = useCallback(async (forceRefresh = false) => {
-    if (!isSignedIn || !user) {
-      setCanVote(false);
-      setSupabaseUser(null);
-      setTokenVerified(false);
-      return;
-    }
+### Using Authentication in Components (Updated Example)
 
-    const token = await getFreshToken(forceRefresh);
-    if (!token) {
-      setTokenVerified(false);
-      setCanVote(false);
-      return;
-    }
-
-    setTokenVerified(true);
-    
-    // Sync user data with Supabase
-    if (user) {
-      const primaryEmail = user.primaryEmailAddress?.emailAddress;
-      if (primaryEmail) {
-        const syncedUser = await syncUserWithSupabase(
-          user.id,
-          primaryEmail,
-          user.fullName,
-          user.imageUrl,
-          token
-        );
-        
-        if (syncedUser) {
-          setSupabaseUser(syncedUser);
-          setCanVote(true);
-        }
-      }
-    }
-  }, [isSignedIn, user, getFreshToken]);
-
-  return {
-    isLoading,
-    supabaseUser,
-    canVote,
-    tokenVerified,
-    supabase: supabaseClient(),
-    error,
-    refreshAuth,
-    authToken: authToken.current,
-    getCurrentAuthToken
-  };
-}
-```
-
-### Using Authentication in Components
-
-To use authentication in your components:
+Components should use the `useSupabaseAuth` hook to access the centrally managed auth state and Supabase client.
 
 ```tsx
-import { useUser } from '@clerk/clerk-react';
 import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
 
 function MyComponent() {
-  const { supabase, canVote } = useSupabaseAuth();
-  const { user, isSignedIn } = useUser();
+  const { 
+    supabase, 
+    supabaseUser, 
+    isLoading, 
+    isAuthenticated 
+  } = useSupabaseAuth();
   
-  if (!isSignedIn) {
+  if (isLoading) {
+    return <div>Loading authentication...</div>;
+  }
+  
+  if (!isAuthenticated || !supabaseUser) {
     return <div>Please sign in</div>;
   }
   
-  return <div>Hello, {user.fullName}</div>;
+  // Now you can use the authenticated `supabase` client
+  // and access profile data like `supabaseUser.full_name`
+  
+  return <div>Hello, {supabaseUser.full_name}</div>;
 }
 ```
 
 ## Data Access Patterns
 
-### React Query Hooks
+### React Query Hooks (Optimized)
 
-We use React Query hooks for data fetching, caching, and state management. These hooks are defined in `src/hooks/use-queries.ts` and wrap the Supabase service functions.
+We use React Query hooks defined in `src/hooks/use-queries.ts`.
 
-#### Example - Fetching Categories:
+*   **Standard Fetching:** Hooks like `useCategories`, `useRequests` wrap service calls for fetching lists or single items.
+*   **Optimized User-Specific Data:** For fetching data specific to the current user across multiple items (like votes), use bulk-fetching hooks like `useUserVotesForRequests`. This avoids the N+1 query problem.
+
+#### Example - Fetching Requests and User Votes (Bulk): 
 
 ```tsx
-import { useCategories } from '@/hooks/use-queries';
+// In a component like src/pages/CategoryDetail.tsx
+import { useRequests, useUserVotesForRequests } from '@/hooks/use-queries';
+import { useMemo } from 'react';
 
-function CategoriesList() {
-  const { data: categories, isLoading, error } = useCategories();
+function RequestList({ categoryId }) {
+  const { data: requests = [], isLoading: requestsLoading } = useRequests(categoryId);
   
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error loading categories: {error.message}</div>;
+  // Get all request IDs on the page
+  const requestIds = useMemo(() => requests.map(req => req.id), [requests]);
   
-  return (
-    <ul>
-      {categories.map(category => (
-        <li key={category.id}>{category.title}</li>
-      ))}
-    </ul>
-  );
+  // Fetch all user votes for these requests in ONE query
+  const { data: userVotesMap = {}, isLoading: userVotesLoading } = useUserVotesForRequests(requestIds);
+  
+  // ... pass individual request data and userVotesMap[request.id] down to VoteCard
 }
 ```
 
-#### Example - Casting a Vote:
+#### Example - Casting a Vote (Remains Similar):
+
+*(Mutation hooks like `useCastVote` still work similarly, obtaining the necessary token/user ID from the central auth state via `useSupabaseAuth`)*
 
 ```tsx
+// In a component like VoteCard.tsx
 import { useCastVote } from '@/hooks/use-queries';
-import { useUser } from '@clerk/clerk-react';
-import { useToast } from '@/hooks/use-toast';
+import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
 
 function VoteButton({ requestId, value }) {
-  const { user, isSignedIn } = useUser();
   const { toast } = useToast();
   const { mutate: castVote, isPending } = useCastVote();
+  const { isAuthenticated } = useSupabaseAuth(); // Get auth status
   
   const handleVote = () => {
-    if (!isSignedIn) {
-      toast({
-        title: "Authentication required",
-        description: "You must be signed in to vote",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!isAuthenticated) { /* show login prompt */ return; }
     
     castVote(
-      { userId: user.id, requestId, value },
-      {
-        onSuccess: () => {
-          toast({
-            title: "Vote recorded",
-            description: "Your vote has been recorded",
-          });
-        },
-        onError: (error) => {
-          toast({
-            title: "Error",
-            description: error.message,
-            variant: "destructive",
-          });
-        },
-      }
+      { requestId, value }, // userId is handled within the hook now
+      { onSuccess: () => { /* ... */ }, onError: (error) => { /* ... */ } }
     );
   };
-  
-  return (
-    <button 
-      onClick={handleVote} 
-      disabled={isPending}
-    >
-      {isPending ? 'Voting...' : 'Vote'}
-    </button>
-  );
+  // ... button render ...
 }
 ```
 
 ### Direct Supabase Client Usage
 
-While React Query hooks are preferred, you can use the Supabase client directly when needed:
-
-```typescript
-import { getSupabaseClient } from '@/lib/clerk-supabase';
-
-// Fetch data directly
-async function fetchCategories() {
-  const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('categories')
-    .select('*');
-    
-  if (error) {
-    console.error('Error fetching categories:', error);
-    throw error;
-  }
-  
-  return data;
-}
-```
+Use `getSupabaseClient(token)` from `lib/clerk-supabase.ts`, obtaining the `token` from `useSupabaseAuth` if authenticated access is needed.
 
 ## Common Operations
 

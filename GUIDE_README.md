@@ -81,9 +81,9 @@ The application utilizes the following technologies:
 
 ## Key Components & Concepts
 
-*   **Authentication (`Clerk` + `Supabase`):** Clerk handles the frontend authentication flow (UI, session management). A custom mechanism (`src/hooks/useSupabaseAuth.ts`, `src/lib/clerk-supabase.ts`, `src/services/users.ts`) syncs the Clerk user with a corresponding user entry in the Supabase `auth.users` table and potentially a `public.users` table. This allows using Supabase Row Level Security (RLS) based on the authenticated user. See `AUTHENTICATION_GUIDE.md` for details.
+*   **Authentication (`Clerk` + `Supabase` + `App.tsx`):** Clerk handles frontend auth. `SupabaseAuthProvider` in `App.tsx` centrally manages the Clerk-Supabase link: it gets the Supabase JWT from Clerk, ensures the user exists in the Supabase `users` table, fetches the Supabase user profile, and provides this state (`token`, `supabaseUser`, `isAuthenticated`) via context. The simplified `useSupabaseAuth` hook consumes this context. RLS in Supabase uses the user ID from the token. See `AUTHENTICATION_GUIDE.md`.
 *   **UI (`shadcn/ui` & `Tailwind`):** Components are primarily built using shadcn/ui, which provides unstyled primitives that are then styled using Tailwind CSS utility classes. Custom components are in `src/components/`, while base shadcn components are often added to `src/components/ui/`.
-*   **Data Fetching (`Tanstack Query`):** Used for fetching, caching, and synchronizing server state. Query keys are typically defined in `src/services/` or near where the queries are used. Look for `useQuery` and `useMutation` hooks.
+*   **Data Fetching (`Tanstack Query` + `use-queries.ts`):** Used for fetching/caching server state. Custom hooks in `use-queries.ts` abstract service calls. Includes optimized hooks like `useUserVotesForRequests` for bulk fetching user-specific data efficiently.
 *   **Routing (`React Router`):** Defines application routes in `src/App.tsx`. Page components are located in `src/pages/`.
 *   **Database (`Supabase`):** The Postgres database schema is managed via migrations in `supabase/migrations/`. The Supabase client is likely initialized and accessed via helper functions in `src/lib/` or `src/services/`. See `SUPABASE_GUIDE.md` for more.
 *   **Environment Variables:** Configuration relies heavily on environment variables (`.env`, `.env.production`). Ensure you have a `.env` file set up locally based on `.env.example`. Sensitive production variables must be configured securely in the deployment environment.
@@ -159,8 +159,8 @@ The application utilizes the following technologies:
 
 ## Further Reading
 
-*   **Authentication:** See `AUTHENTICATION_GUIDE.md` for a deep dive into the Clerk/Supabase setup.
-*   **Supabase:** See `SUPABASE_GUIDE.md` for details on Supabase setup, local development, and database management.
+*   **Authentication:** See `AUTHENTICATION_GUIDE.md` for the centralized auth flow.
+*   **Supabase:** See `SUPABASE_GUIDE.md` for Supabase details, including optimized data patterns.
 *   **TODOs:** Check `TODO.md` for outstanding tasks or known issues.
 
 ## Contributing

@@ -22,8 +22,8 @@ The project follows a common structure for React/Vite applications:
         *   **`/admin`**: Components specific to the admin dashboard (`CategoryForm.tsx`, `RequestForm.tsx`).
         *   Custom components like `Header.tsx`, `Footer.tsx`, `VoteCard.tsx`, `RequestCard.tsx`, `SuggestedRequestCard.tsx`, `CategoryCard.tsx`, `CommentSystem.tsx`, etc. These compose the UI elements from `/ui` and add application-specific logic and structure.
     *   **`/hooks`**: Custom React Hooks to encapsulate reusable logic, especially for data fetching and state management.
-        *   `use-queries.ts`: Contains custom hooks built on top of `@tanstack/react-query` to fetch and manage data from Supabase (e.g., `useCategories`, `useRequests`, `useUserVote`). This centralizes data fetching logic.
-        *   `use-supabase-auth.ts`: A crucial hook managing the authentication state synchronization between Clerk (frontend auth) and Supabase (backend/database auth). It handles getting JWT tokens from Clerk and using them to interact with Supabase securely.
+        *   `use-queries.ts`: Contains custom hooks built on top of `@tanstack/react-query` to fetch and manage data from Supabase (e.g., `useCategories`, `useRequests`, `useUserVote`). This centralizes data fetching logic. Also includes hooks for optimized bulk fetching (e.g., `useUserVotesForRequests`).
+        *   `use-supabase-auth.ts`: A hook that **consumes** the centrally managed authentication context (`AuthContext` from `App.tsx`). It provides easy access to the Supabase JWT, the fetched Supabase user profile, authentication status, and an authenticated Supabase client instance.
         *   `use-toast.ts`: Likely a simple hook for displaying notifications (toasts).
     *   **`/lib`**: Utility functions and library initializations.
         *   `utils.ts`: General utility functions, like `cn` for combining Tailwind classes.
@@ -36,46 +36,40 @@ The project follows a common structure for React/Vite applications:
         *   `categories.ts`, `comments.ts`, `requests.ts`, `suggestedRequests.ts`, `timelineEvents.ts`, `users.ts`, `votes.ts`: Each file contains functions to perform CRUD (Create, Read, Update, Delete) operations on the corresponding Supabase tables (e.g., `getRequests`, `castVote`, `syncUserWithSupabase`).
     *   **`/types`**: TypeScript type definitions.
         *   `supabase.ts`: **(Currently Incomplete/Error)** This file *should* contain TypeScript types generated from your Supabase database schema, likely using the Supabase CLI (`supabase gen types typescript`). This provides type safety when interacting with the database. The current content suggests the generation process hasn't completed successfully.
-    *   `App.tsx`: The main application component. It sets up routing (using `react-router-dom`), global providers (like `QueryClientProvider` for React Query, `TooltipProvider`, and the custom `SupabaseAuthProvider`), and renders the main layout.
+    *   `App.tsx`: The main application component. Sets up routing, global providers (`QueryClientProvider`, `TooltipProvider`), and importantly, the **`SupabaseAuthProvider`**. This provider manages the core Clerk-Supabase auth link (token fetching, user sync, profile fetch) and provides the auth state via `AuthContext`.
     *   `main.tsx`: The entry point of the application. It initializes the React app, sets up the Clerk provider with the publishable key, and renders the `App` component into the DOM.
     *   `index.css`: Global CSS styles, including Tailwind CSS directives.
 
 ## Key File Interactions & Data Flow
 
 1.  **Initialization (`main.tsx` -> `App.tsx`)**:
-    *   `main.tsx` sets up the Clerk provider (`ClerkProvider`) which makes authentication context available throughout the app.
-    *   It renders `App.tsx`.
+    *   `main.tsx` sets up `ClerkProvider`.
     *   `App.tsx` sets up:
-        *   React Router (`BrowserRouter`) for handling navigation.
-        *   React Query (`QueryClientProvider`) for server state management (fetching, caching, updating data).
-        *   `SupabaseAuthProvider`: This custom provider wraps the application and uses the `use-supabase-auth` hook to manage the Clerk-Supabase authentication link. It gets the JWT from Clerk and makes it available (indirectly via `useSupabaseAuth`) for authenticated Supabase requests. It handles the initial user sync.
-        *   UI Providers (`TooltipProvider`, `Toaster`).
-        *   Defines the application's routes (`Routes`, `Route`).
+        *   React Router, React Query, UI Providers.
+        *   `SupabaseAuthProvider`: **(Central Auth Hub)** This component now manages the entire Clerk-Supabase link lifecycle. It fetches the token, syncs the user to the `public.users` table, fetches the `public.users` profile, and provides `token`, `supabaseUser`, `isAuthenticated`, `isLoadingAuth` via `AuthContext`.
+        *   Routes.
 
-2.  **Authentication (`use-supabase-auth.ts`, `clerk-supabase.ts`, `users.ts`)**:
-    *   Clerk handles the frontend sign-in/sign-up UI and session management (`SignIn`, `SignUp`, `useAuth`, `useUser`).
-    *   When a user signs in, `SupabaseAuthProvider` (via `use-supabase-auth.ts`) detects the change.
-    *   `use-supabase-auth.ts` uses `useAuth().getToken({ template: 'supabase' })` to get a short-lived JWT specifically configured for Supabase access.
-    *   This hook then calls `syncUserWithSupabase` (from `services/users.ts`).
-    *   `syncUserWithSupabase` takes the user's Clerk details (ID, email) and the Supabase JWT. It uses `getSupabaseClient(authToken)` (from `lib/clerk-supabase.ts`) to get an authenticated Supabase client instance.
-    *   It then upserts the user's data into the `users` table in Supabase, ensuring a corresponding user record exists linked to the Clerk ID. This step is crucial for RLS (Row Level Security) in Supabase, which relies on the `auth.uid()` function matching the user's ID in the table.
-    *   The `use-supabase-auth.ts` hook provides access to the authenticated Supabase client instance (`supabase`), the JWT (`authToken`), and user status (`supabaseUser`, `canVote`, `tokenVerified`).
+2.  **Authentication (`App.tsx`, `use-supabase-auth.ts`, `clerk-supabase.ts`, `users.ts`)**: 
+    *   Clerk handles frontend UI/session.
+    *   `SupabaseAuthProvider` in `App.tsx` handles token fetching, user syncing (`syncUserWithSupabase` from `services/users.ts`), and profile fetching, making state available via context.
+    *   `use-supabase-auth.ts` is now primarily a **consumer** of this context, providing convenient access to the state (token, `supabaseUser`, etc.) and an authenticated Supabase client (`getSupabaseClient(token)` from `lib/clerk-supabase.ts`).
+    *   RLS in Supabase uses the `auth.uid()` from the token provided in requests.
 
-3.  **Data Fetching (`Pages` -> `use-queries.ts` -> `Services` -> `Supabase`)**:
-    *   Page components (e.g., `Index.tsx`, `CategoryDetail.tsx`) need data.
-    *   They call custom hooks from `use-queries.ts` (e.g., `useCategories()`, `useRequests(categoryId)`).
-    *   These hooks use React Query (`useQuery`) to manage the data fetching lifecycle (loading, error, success, caching).
-    *   The `queryFn` within `useQuery` calls functions from the relevant service module (e.g., `categoriesService.getCategories()`, `requestsService.getRequestsByCategory(categoryId)`).
-    *   Service functions (e.g., in `services/categories.ts`) use `getSupabaseClient()` (often the anonymous client for reads, or an authenticated one via a token passed from the hook for writes/RLS-protected reads) to interact directly with the Supabase database (e.g., `supabase.from('categories').select('*')`).
-    *   Data flows back up: Supabase -> Service -> React Query Hook -> Page Component -> Rendered UI.
+3.  **Data Fetching (`Pages` -> `use-queries.ts` -> `Services` -> `Supabase`)**: 
+    *   Pages call hooks from `use-queries.ts`.
+    *   For general data, hooks like `useRequests` call service functions (e.g., `requestsService.getRequestsByCategory`).
+    *   For user-specific data across multiple items (like votes on a page), pages use **bulk-fetching hooks** like `useUserVotesForRequests` (defined in `use-queries.ts`). This hook calls a service function (e.g., `votesService.getUserVotesForRequests`) that gets all necessary votes in one Supabase query.
+    *   Service functions use `getSupabaseClient()` (potentially authenticated via token from context) to query Supabase.
+    *   Data flows back: Supabase -> Service -> React Query Hook -> Page Component -> UI.
 
-4.  **Data Mutation (e.g., Voting: `VoteCard.tsx` -> `use-queries.ts` -> `services/votes.ts` -> `Supabase`)**:
-    *   A user interacts with a component (e.g., clicks a vote button in `VoteCard.tsx`).
-    *   The component calls a mutation hook from `use-queries.ts` (e.g., `useCastVote().mutate(...)`).
-    *   The mutation hook (`useMutation`) gets the current user ID and retrieves an auth token using `use-supabase-auth.ts` helpers (`supabaseUser`, `getCurrentAuthToken`).
-    *   It calls the relevant service function (e.g., `votesService.castVote(userId, requestId, value, authToken)`).
-    *   The service function uses an *authenticated* Supabase client (`getSupabaseClient(authToken)`) to perform the database operation (inserting/updating a vote). RLS policies on the `votes` table ensure the user can only modify their own vote.
-    *   On success, the mutation hook uses `queryClient.invalidateQueries` to tell React Query that related data (like vote stats or the user's current vote) is stale, triggering refetches and updating the UI.
+4.  **Data Mutation (e.g., Voting: `VoteCard.tsx` -> `use-queries.ts` -> `services/votes.ts` -> `Supabase`)**: 
+    *   User interacts (e.g., clicks vote button).
+    *   Component calls mutation hook (e.g., `useCastVote().mutate(...)`).
+    *   Mutation hook gets necessary info (like `userId` from `supabaseUser`) and token via `useSupabaseAuth()` (which gets it from context).
+    *   Calls service function (e.g., `votesService.castVote(..., authToken)`).
+    *   Service function uses authenticated client (`getSupabaseClient(authToken)`).
+    *   RLS policies apply in Supabase.
+    *   `queryClient.invalidateQueries` triggers UI updates.
 
 5.  **UI and Styling (`Components`, `Shadcn UI`, `Tailwind CSS`)**:
     *   Pages are built by composing components from `/src/components`.

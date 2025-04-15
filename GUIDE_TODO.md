@@ -174,6 +174,8 @@ create table public.timeline_events (
 - [x] Complete Clerk integration for authentication
 - [x] Set up JWT template in Clerk for Supabase authentication
 - [x] Implement robust error handling for auth edge cases
+- [x] Centralize auth state management in `App.tsx` (`SupabaseAuthProvider`)
+- [x] Simplify `useSupabaseAuth` hook to consume central context
 - [ ] Create protected routes that require authentication
 - [x] Implement user profile synchronization with Supabase
 - [ ] Implement user profile page with voting history
@@ -223,8 +225,9 @@ create table public.timeline_events (
 - [ ] Implement animations for better interactivity
 
 ### Performance & Optimization
-- [x] Implement query caching for improved performance
-- [ ] Add pagination for large data sets
+- [x] Implement query caching for improved performance (via React Query defaults)
+- [x] Implement bulk fetching for user votes (e.g., `useUserVotesForRequests`)
+- [ ] Add pagination for large data sets (e.g., comments, requests)
 - [ ] Optimize components to prevent unnecessary rerenders
 - [ ] Implement code splitting for better load times
 
@@ -293,11 +296,13 @@ Based on a code review, the following components or features need to be migrated
    - Search results display
 
 ## Next Implementation Steps
-1. [x] Fix authentication between Clerk and Supabase
-   - [x] Update database schema to use TEXT type for user IDs
-   - [x] Add proper JWT template in Clerk
-   - [x] Improve error handling in auth flow
-2. [x] Implement Row Level Security (RLS) policies for Supabase to protect resources
+1.  ✅ **Fix Authentication Flow (Centralized)** (DONE)
+    - ✅ Update database schema (TEXT IDs) (DONE)
+    - ✅ Add JWT template in Clerk (DONE)
+    - ✅ Centralize auth logic in `App.tsx` (DONE)
+    - ✅ Simplify `useSupabaseAuth` (DONE)
+    - ✅ Optimize user vote fetching (Bulk Fetching) (DONE)
+2.  ✅ Implement Row Level Security (RLS) policies (DONE)
 3. [ ] Create missing UI components listed above
 4. [ ] Develop admin dashboard and moderation tools
 5. [ ] Add search functionality and filtering options
@@ -308,32 +313,14 @@ Based on a code review, the following components or features need to be migrated
    - [ ] Deploy to Cloudflare Pages
    - [ ] Verify authentication and security in production
 
-## Next Steps
-
-1. ✅ **Fix database schema to align with UI needs** (DONE)
-   - ✅ Update tables to include all required fields (slug, status, etc.)
-   - ✅ Add necessary indexes for performance
-
-2. ✅ **Fix type definitions** (DONE)
-   - ✅ Ensure type definitions match database schema
-   - ✅ Update ExtendedRequest and other types with missing properties
-
-3. ✅ **Fix authentication integration** (DONE)
-   - ✅ Update database schema to use TEXT type for user IDs
-   - ✅ Configure proper JWT template in Clerk
-   - ✅ Improve error handling in useSupabaseAuth hook
-   - ✅ Update voting components to use proper auth state
-
-4. **Implement missing pages**
-   - Category detail page
-   - Request detail page
-   - Suggestion submission form
-   - User profile page
-
-5. **Complete the admin section**
-   - Admin dashboard
-   - Content moderation tools
-   - Analytics dashboard 
+## Next Steps (Simplified)
+1. ✅ **Fix database schema & types** (DONE)
+2. ✅ **Fix & Optimize authentication integration** (DONE)
+3. [ ] Implement missing pages (Category Detail, Request Detail, Suggestion Form, User Profile)
+4. [ ] Complete the admin section
+5. [ ] Add search functionality
+6. [ ] Enhance user profiles
+7. [ ] Deploy to production
 
 ## Database Management
 

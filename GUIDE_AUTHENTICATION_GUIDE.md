@@ -1,86 +1,70 @@
 # Authentication Guide for Građanski Zahtevi
 
-This document explains how authentication is set up between Clerk and Supabase, and provides guidance for implementing Row Level Security (RLS) policies.
+This document explains how authentication is set up between Clerk and Supabase, focusing on the centralized management within the application.
 
-## Authentication Flow
+## Centralized Authentication Flow (`App.tsx`)
 
-The application uses Clerk for authentication and Supabase for database operations. Here's how they work together:
+The application uses Clerk for frontend authentication and Supabase for database operations. The core logic coordinating these is centralized within the `SupabaseAuthProvider` component in `src/App.tsx`.
 
-1. **User signs in with Clerk**
-   - User authenticates through Clerk's SignIn component
-   - Clerk handles email verification, social logins, etc.
+1.  **Clerk Authentication:**
+    *   User authenticates via Clerk components (`SignIn`, `SignUp`).
+    *   Clerk manages the frontend session and user object (`useAuth`, `useUser`).
 
-2. **Clerk-Supabase synchronization**
-   - The `useSupabaseAuth` hook in `src/hooks/use-supabase-auth.ts` syncs the user with Supabase
-   - It performs two main tasks:
-     1. Gets a JWT token from Clerk using the "supabase" template
-     2. Creates/updates the user record in Supabase's `users` table
+2.  **`SupabaseAuthProvider` Initialization:**
+    *   Detects changes in Clerk's authentication state (`isSignedIn`, `isUserLoaded`).
+    *   When a user is signed in and loaded:
+        *   **Fetches Supabase JWT:** Retrieves the specialized JWT from Clerk using `getToken({ template: 'supabase' })`. Handles caching and automatic refresh using `lib/clerk-supabase.ts`.
+        *   **Syncs User:** Calls `syncUserWithSupabase` (from `services/users.ts`) to ensure a corresponding user record exists in the `public.users` table in Supabase. This uses the fetched JWT for authentication.
+        *   **Fetches Supabase Profile:** After syncing, it fetches the full user profile from the `public.users` table.
+        *   **Provides Context:** Makes the authentication state (`token`, `supabaseUser`, `isAuthenticated`, `isLoadingAuth`, `refreshToken`) available globally via React Context (`AuthContext`).
 
-3. **Token-based authentication**
-   - The JWT token is used to authenticate Supabase requests
-   - Supabase verifies the token using the shared JWT secret
-   - This allows RLS policies to recognize the authenticated user
+3.  **Token-Based Supabase Requests:**
+    *   Components needing to make authenticated Supabase requests retrieve the current token via the `useAuthContext` hook or the simplified `useSupabaseAuth` hook.
+    *   The token is included in the `Authorization: Bearer <token>` header (handled by `lib/clerk-supabase.ts`'s `getSupabaseClient`).
+    *   Supabase verifies the token using the shared JWT secret configured in its dashboard.
+    *   RLS policies in Supabase use `auth.uid()` (which corresponds to the Clerk user ID in the token) to authorize data access.
+
+## Simplified `useSupabaseAuth` Hook (`src/hooks/use-supabase-auth.ts`)
+
+The `useSupabaseAuth` hook has been simplified. It no longer manages the synchronization process itself. Instead, it acts as a convenient way to **consume** the centralized authentication state provided by `SupabaseAuthProvider` via `AuthContext`.
+
+*   It returns the current `authToken`, `supabaseUser` profile, loading state (`isLoading`), authentication status (`isAuthenticated`), and a `refreshToken` function from the context.
+*   It also provides a pre-configured Supabase client instance (`supabase`) ready for making authenticated requests using the current token.
+
+```tsx
+// Example usage in a component
+import { useSupabaseAuth } from '@/hooks/use-supabase-auth';
+
+function MyComponent() {
+  const { 
+    supabase,        // Authenticated Supabase client instance
+    supabaseUser,    // User profile data from public.users table
+    isLoading,       // Is auth state still loading?
+    isAuthenticated, // Is the user considered authenticated?
+    authToken        // The raw JWT token (use with caution)
+  } = useSupabaseAuth(); 
+
+  if (isLoading) {
+    return <p>Loading auth...</p>;
+  }
+
+  if (!isAuthenticated || !supabaseUser) {
+    return <p>Please sign in.</p>;
+  }
+
+  // Use supabase client for authenticated requests
+  // Access supabaseUser.full_name, etc.
+
+  return <p>Welcome, {supabaseUser.full_name}!</p>;
+}
+```
 
 ## Cloudflare Workers Integration
 
-The application runs on Cloudflare Workers, which affects how authentication and data operations work:
+The application runs on Cloudflare Workers. The centralized authentication model works well here:
 
-### Token Management
-
-1. **Token Storage**
-   - Tokens are stored in memory within the Worker's context
-   - Each Worker instance maintains its own token cache
-   - Tokens are not persisted between Worker restarts
-
-2. **Token Refresh**
-   - The `useSupabaseAuth` hook handles token refresh automatically
-   - When a token expires, the hook requests a new one from Clerk
-   - The new token is then used for subsequent Supabase requests
-
-### Voting Component Implementation
-
-The voting system is implemented with Cloudflare Workers in mind:
-
-1. **Client-Side Voting**
-   ```typescript
-   // In src/services/votes.ts
-   export async function castVote(
-     userId: string, 
-     requestId: string, 
-     value: number,
-     authToken?: string | null
-   ): Promise<Vote | null> {
-     // Get appropriate client based on auth token
-     const client = getSupabaseClient(authToken);
-     
-     // Check if user already voted
-     const existingVote = await getUserVote(userId, requestId, authToken);
-     
-     if (existingVote) {
-       // Update existing vote
-       const { data, error } = await client
-         .from('votes')
-         .update({ value })
-         .eq('user_id', userId)
-         .eq('request_id', requestId);
-     } else {
-       // Create new vote
-       const { data, error } = await client
-         .from('votes')
-         .insert({ user_id: userId, request_id: requestId, value });
-     }
-   }
-   ```
-
-2. **Error Handling**
-   - Special handling for auth errors (PGRST301, 42501)
-   - Token expiration checks
-   - Network error recovery
-
-3. **Performance Considerations**
-   - Minimal token validation overhead
-   - Efficient client caching
-   - Optimized database queries
+*   **Token Management:** The `SupabaseAuthProvider` manages token fetching, caching (`cachedTokenRef`), and refresh logic within the client-side React application context. The Worker primarily serves the application files.
+*   **Client-Side Operations:** Authentication checks, user synchronization, and Supabase data requests originate from the user's browser, using the token managed by the provider.
 
 ## JWT Template Configuration
 
@@ -198,44 +182,39 @@ CREATE POLICY "Type-safe policy" ON public.some_table
 
 ## Troubleshooting Authentication
 
-If you encounter issues with authentication:
+If you encounter issues:
 
-1. **Check browser console** for error messages
-2. **Verify JWT template** is correctly set up in Clerk
-3. **Check Supabase logs** for auth errors
-4. **Ensure your RLS policies** are correctly implemented
-5. **Test the auth flow** step by step:
-   - Is the user record being created in Supabase?
-   - Is the JWT token being generated correctly?
-   - Are the policy expressions evaluating as expected?
-6. **Verify Supabase session** using browser tools:
-   - Check Network tab for API calls to Supabase
-   - Look for the Authorization header to confirm token is being sent
-   - Use a tool like jwt.io to decode and verify your tokens
+1.  **Check Browser Console:** Look for errors from `APP:`, `useSupabaseAuth DEBUG:`, `CLERK-SUPABASE:`, Clerk, or Supabase.
+2.  **Verify JWT Template:** Ensure it's correctly set up in Clerk dashboard.
+3.  **Check Supabase Logs:** Look for auth errors (Dashboard -> Logs -> Database / PostgREST).
+4.  **Verify `SupabaseAuthProvider` Logic:** Ensure the provider in `App.tsx` correctly fetches tokens, syncs the user, and fetches the profile. Add debug logs there if needed.
+5.  **Inspect Context Value:** Use React DevTools to inspect the value provided by `AuthContext` to see if the `token` and `supabaseUser` are being populated correctly.
+6.  **Check RLS Policies:** Ensure policies use `auth.uid()::text` and are correctly implemented.
+7.  **Test Token Directly:** Use `lib/clerk-supabase.ts`'s `testJwtToken` function (if needed, via browser console) to verify a token against Supabase RLS.
 
-## Cloudflare Workers Specific Issues
+## Common Authentication Issues and Solutions (Updated)
 
-When running on Cloudflare Workers, watch out for:
+### 1. JWT Token Handling & Synchronization
+*   **Problem:** Repeated "Syncing user..." logs or slow loading due to multiple auth checks.
+*   **Solution:** Ensure all components rely on the central state provided by `SupabaseAuthProvider` via `AuthContext` or `useSupabaseAuth`. Avoid independent token fetching or user sync calls within individual components. `App.tsx` now handles this centrally.
 
-1. **Token Expiration**
-   - Workers may cache tokens longer than expected
-   - Implement proper token refresh logic
-   - Use the `getFreshToken` function from `useSupabaseAuth`
+### 2. Row Level Security (RLS) Policies
+*   **Type Mismatches:** Ensure `auth.uid()::text = user_id` casting.
+*   **Missing Policies:** Verify policies exist for SELECT, INSERT, UPDATE, DELETE as needed.
+*   **Policy Debugging:** Use Supabase logs and direct SQL queries.
 
-2. **Network Latency**
-   - Workers may experience higher latency to Supabase
-   - Implement retry logic for failed requests
-   - Consider using connection pooling
+### 3. Authentication State Management
+*   **Problem:** Inconsistent state between components.
+*   **Solution:** Rely solely on the state provided by `AuthContext` (`token`, `supabaseUser`, `isAuthenticated`, `isLoadingAuth`). `SupabaseAuthProvider` in `App.tsx` is the single source of truth.
 
-3. **Cold Starts**
-   - New Worker instances start with empty token cache
-   - Handle token revalidation on cold starts
-   - Consider warming up frequently used routes
+### 4. Database Schema Considerations
+*   **User ID Types:** Use TEXT.
+*   **Table Relationships:** Use foreign keys correctly.
 
-4. **Memory Limits**
-   - Workers have memory constraints
-   - Keep token cache size reasonable
-   - Implement cache eviction policies
+### 5. Error Handling and Debugging
+*   **Check Error Codes:** 401, 403, etc.
+*   **Validate Data:** Ensure correct types and non-null values.
+*   **Use Logging:** Add `console.log` or `debugLog` statements strategically.
 
 ## Next Steps
 
