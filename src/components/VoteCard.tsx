@@ -543,10 +543,10 @@ export function VoteCard({
                 className={cn(
                   // Base style: Outline, gray border, gray hover, specific text color
                   "flex-1 text-green-700 border border-gray-300 hover:bg-gray-100 transition-all py-3 text-base", 
-                  // Selection style: Blue border
-                  !isLoading && selectedOption === "yes" && "border-2 border-serbia-blue", 
-                  // Dim unselected
-                  !isLoading && selectedOption && selectedOption !== "yes" && "opacity-60"
+                  // Selection style: Blue border (No longer depends on !isLoading)
+                  selectedOption === "yes" && "border-2 border-serbia-blue", 
+                  // Dim unselected (No longer depends on !isLoading)
+                  selectedOption && selectedOption !== "yes" && "opacity-60"
                 )}
                 variant="outline"
                 disabled={isDisabled}
@@ -558,10 +558,9 @@ export function VoteCard({
                     <ThumbsUp className="mr-2 h-5 w-5" />
                   )}
                   <span className="font-medium">Za</span>
-                  {/* Selection style: Blue checkmark */}
-                  {!isLoading && selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-serbia-blue" />}
+                  {/* Selection style: Blue checkmark (No longer depends on !isLoading) */}
+                  {selectedOption === "yes" && <CheckCircle2 className="ml-2 h-5 w-5 text-serbia-blue" />}
                 </div>
-                {/* Removed vote count badge */}
               </Button>
               
               <Button
@@ -569,10 +568,10 @@ export function VoteCard({
                 className={cn(
                   // Base style: Outline, gray border, gray hover, specific text color
                   "flex-1 text-red-700 border border-gray-300 hover:bg-gray-100 transition-all py-3 text-base", 
-                   // Selection style: Blue border
-                  !isLoading && selectedOption === "no" && "border-2 border-serbia-blue", 
-                  // Dim unselected
-                  !isLoading && selectedOption && selectedOption !== "no" && "opacity-60"
+                   // Selection style: Blue border (No longer depends on !isLoading)
+                  selectedOption === "no" && "border-2 border-serbia-blue", 
+                  // Dim unselected (No longer depends on !isLoading)
+                  selectedOption && selectedOption !== "no" && "opacity-60"
                 )}
                 variant="outline"
                 disabled={isDisabled}
@@ -584,10 +583,9 @@ export function VoteCard({
                     <ThumbsDown className="mr-2 h-5 w-5" />
                   )}
                   <span className="font-medium">Protiv</span>
-                  {/* Selection style: Blue checkmark */}
-                  {!isLoading && selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-serbia-blue" />}
+                  {/* Selection style: Blue checkmark (No longer depends on !isLoading) */}
+                  {selectedOption === "no" && <CheckCircle2 className="ml-2 h-5 w-5 text-serbia-blue" />}
                 </div>
-                {/* Removed vote count badge */}
               </Button>
             </div>
           </div>
