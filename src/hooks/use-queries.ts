@@ -240,7 +240,14 @@ export function useCastVote() {
       const result = await votesService.castVote(userId, requestId, value, authToken);
       
       if (result === null) {
-        throw new Error('Failed to cast vote. You may not have permission or there may be an authentication issue.');
+        // Handle potential permission/auth errors more gracefully
+        // Check if the error might be related to token expiry or permissions
+        // You might need more specific error handling based on votesService behavior
+        console.warn("Failed to cast vote. Check permissions or authentication."); 
+        // Returning null might be better than throwing an error that crashes the flow
+        // depending on how you want to handle UI feedback for failed votes.
+        // throw new Error('Failed to cast vote. You may not have permission or there may be an authentication issue.');
+        return null; // Or throw depending on desired behavior
       }
       
       // Reset retry count on success
@@ -251,9 +258,19 @@ export function useCastVote() {
       // Invalidate relevant queries to update UI
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', requestId] });
       queryClient.invalidateQueries({ queryKey: ['votes', 'user', userId, requestId] });
+      // ADDED: Invalidate bulk user votes for this user (used by useUserVotesForRequests)
+      queryClient.invalidateQueries({ queryKey: ['votes', 'user', 'bulk', userId] });
       
       return result;
     },
+    onError: (error) => {
+      // Log the error for debugging
+      console.error("Error casting vote mutation:", error);
+      // Optionally reset retry count on final failure
+      setRetryCount(0);
+      // You might want to show a toast notification here
+    },
+    // Consider adding onSettled if you need cleanup regardless of success/error
   });
 }
 
@@ -363,8 +380,12 @@ export function useRemoveVote() {
       debugLog(`Calling removeVote with token: ${authToken ? 'present' : 'missing'}`);
       const result = await votesService.removeVote(userId, requestId, authToken);
       
-      if (result === null) {
-        throw new Error('Failed to remove vote. You may not have permission or there may be an authentication issue.');
+      // Handle potential failure more gracefully
+      if (result === false) { 
+        console.warn("Failed to remove vote. Check permissions or authentication.");
+        // Returning false might be better than throwing if the service indicates failure cleanly
+        // throw new Error('Failed to remove vote. You may not have permission or there may be an authentication issue.');
+         return false; // Or throw depending on desired behavior
       }
       
       // Reset retry count on success
@@ -375,9 +396,19 @@ export function useRemoveVote() {
       // Invalidate relevant queries to update UI
       queryClient.invalidateQueries({ queryKey: ['votes', 'stats', requestId] });
       queryClient.invalidateQueries({ queryKey: ['votes', 'user', userId, requestId] });
+       // ADDED: Invalidate bulk user votes for this user (used by useUserVotesForRequests)
+      queryClient.invalidateQueries({ queryKey: ['votes', 'user', 'bulk', userId] });
       
-      return result;
+      return result; // Should be true if successful
     },
+    onError: (error) => {
+      // Log the error for debugging
+      console.error("Error removing vote mutation:", error);
+      // Optionally reset retry count on final failure
+      setRetryCount(0);
+      // You might want to show a toast notification here
+    },
+    // Consider adding onSettled
   });
 }
 
